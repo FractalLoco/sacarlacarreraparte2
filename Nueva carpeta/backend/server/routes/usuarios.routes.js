@@ -1,0 +1,11 @@
+"use strict";
+const router=require("express").Router();
+const c=require("../controllers/usuarios.controller");
+const {autenticar,soloAdmin}=require("../middleware/auth");
+const audit=require("../middleware/audit");
+router.get("/",autenticar,soloAdmin,c.listar);
+router.get("/roles",autenticar,c.listarRoles);
+router.post("/",autenticar,soloAdmin,audit("crear_usuario"),c.crear);
+router.put("/:id",autenticar,soloAdmin,audit("editar_usuario"),c.actualizar);
+router.delete("/:id",autenticar,soloAdmin,audit("desactivar_usuario"),c.desactivar);
+module.exports=router;

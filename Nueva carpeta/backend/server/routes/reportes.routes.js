@@ -1,0 +1,10 @@
+"use strict";
+const router=require("express").Router();
+const c=require("../controllers/reportes.controller");
+const {autenticar,nivelSupervisor}=require("../middleware/auth");
+router.get("/produccion/:lote_id",autenticar,nivelSupervisor,c.produccionPDF);
+router.get("/produccion/:lote_id/excel",autenticar,nivelSupervisor,c.produccionExcel);
+router.get("/comparacion",autenticar,nivelSupervisor,c.comparacion);
+router.get("/por-linea",autenticar,nivelSupervisor,c.porLinea);
+router.get("/por-turno",autenticar,nivelSupervisor,c.porTurno);
+module.exports=router;

@@ -1,0 +1,13 @@
+"use strict";
+const router=require("express").Router();
+const c=require("../controllers/lotes.controller");
+const {autenticar,nivelJefe}=require("../middleware/auth");
+const audit=require("../middleware/audit");
+router.get("/",           autenticar, c.listar);
+router.get("/activo",     autenticar, c.obtenerActivo);
+router.get("/:id",        autenticar, c.obtener);
+router.get("/:id/resumen",autenticar, c.resumen);
+router.post("/",          autenticar, nivelJefe, audit("crear_lote"),          c.crear);
+router.put("/:id",        autenticar, nivelJefe, audit("editar_lote"),          c.actualizar);
+router.put("/:id/estado", autenticar, nivelJefe, audit("cambiar_estado_lote"), c.cambiarEstado);
+module.exports=router;

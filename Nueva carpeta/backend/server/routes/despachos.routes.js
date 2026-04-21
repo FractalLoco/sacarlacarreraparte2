@@ -1,0 +1,12 @@
+"use strict";
+const router=require("express").Router();
+const c=require("../controllers/despachos.controller");
+const {autenticar,nivelJefe,nivelBodeguero}=require("../middleware/auth");
+const audit=require("../middleware/audit");
+router.get("/",           autenticar, c.listar);
+router.get("/clientes",   autenticar, c.listarClientes);
+router.get("/:id",        autenticar, c.obtener);
+router.get("/:id/pdf",    autenticar, nivelJefe, c.guiaPDF);
+router.post("/clientes",  autenticar, nivelJefe, c.crearCliente);
+router.post("/",          autenticar, nivelBodeguero, audit("crear_despacho"), c.crear);
+module.exports=router;

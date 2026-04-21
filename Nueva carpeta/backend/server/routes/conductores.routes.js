@@ -1,0 +1,10 @@
+"use strict";
+const router=require("express").Router();
+const c=require("../controllers/conductores.controller");
+const {autenticar,nivelJefe}=require("../middleware/auth");
+const audit=require("../middleware/audit");
+router.get("/",     autenticar, c.listar);
+router.get("/:id",  autenticar, c.obtener);
+router.post("/",    autenticar, nivelJefe, audit("crear_conductores"), c.crear);
+router.put("/:id",  autenticar, nivelJefe, audit("editar_conductores"), c.actualizar);
+module.exports=router;

@@ -1,0 +1,11 @@
+"use strict";
+const router = require("express").Router();
+const c = require("../controllers/turnos.controller");
+const {autenticar, nivelSupervisor} = require("../middleware/auth");
+const audit = require("../middleware/audit");
+router.get("/",           autenticar, c.listar);
+router.get("/activo",     autenticar, c.activo);
+router.get("/:id/resumen",autenticar, c.resumenTurno);
+router.post("/",          autenticar, nivelSupervisor, audit("abrir_turno"),  c.abrir);
+router.put("/:id/cerrar", autenticar, nivelSupervisor, audit("cerrar_turno"), c.cerrar);
+module.exports = router;
