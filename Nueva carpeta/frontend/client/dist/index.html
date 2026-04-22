@@ -12,12 +12,25 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { -webkit-text-size-adjust: 100%; }
+    html { -webkit-text-size-adjust: 100%; height: 100%; width: 100%; }
     body {
       font-family: "Plus Jakarta Sans", system-ui, sans-serif;
       background: #f0f4f8;
       -webkit-font-smoothing: antialiased;
       overscroll-behavior: none;
+      height: 100vh;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    #root {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
     }
     /* Scrollbar personalizado */
     ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -26,7 +39,7 @@
     button, a, select { touch-action: manipulation; }
     input, select, textarea { font-size: 16px !important; } /* Evita zoom en iOS */
   </style>
-  <script type="module" crossorigin src="/assets/index-CD39XuDN.js"></script>
+  <script type="module" crossorigin src="/assets/index-Bh6XLC-r.js"></script>
 </head>
 <body>
   <div id="root"></div>
