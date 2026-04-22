@@ -108,6 +108,12 @@ export const tunelesAPI={
   congelarCarro:(carro_id,d)=>apiPost(`/tuneles/carros/${carro_id}/congelar`,d),
   etiquetasZebraCarro:(carro_id,cliente)=>apiGet(`/tuneles/carros/${carro_id}/etiquetas-zebra${cliente?`?cliente=${encodeURIComponent(cliente)}`:""}`),
   etiquetasZebraLote:(lote_id,cliente)=>apiGet(`/tuneles/lotes/${lote_id}/etiquetas-zebra${cliente?`?cliente=${encodeURIComponent(cliente)}`:""}`),
+  descargarZplLote:(lote_id,cliente)=>{
+    const t=_token;
+    const qs=cliente?`?cliente=${encodeURIComponent(cliente)}`:"";
+    return fetch(`/api/tuneles/lotes/${lote_id}/etiquetas-zpl${qs}`,{headers:t?{"Authorization":`Bearer ${t}`}:{}})
+      .then(async r=>{if(!r.ok)throw new Error("Error al generar ZPL");const b=await r.blob();descargar(b,`etiquetas-${lote_id}.zpl`);});
+  },
   etiquetaCaja:id=>apiGet(`/tuneles/cajas/${id}/etiqueta`),
   exportarExcel:(f={})=>apiGet("/tuneles/exportar/carros?"+new URLSearchParams(limpiar(f))).then(b=>descargar(b,`carros-cajas-${hoy()}.xlsx`)),
 };

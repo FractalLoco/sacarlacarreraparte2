@@ -841,12 +841,131 @@ const congelarCarro = async (req, res) => {
   }
 };
 
+// ── Generador ZPL para Zebra ZT411 — 203 DPI, 100x100mm ─────
+// 1 mm = 203/25.4 ≈ 8 dots   →   100mm ≈ 799 dots
+function generarZPL(ca, opts = {}) {
+  const { cliente = null } = opts;
+  const productoES = PROD_ES[ca.producto] || `${(ca.producto||"").toUpperCase()} DE JIBIA CONGELADO`;
+  const productoEN = PROD_EN[ca.producto] || `FROZEN JUMBO FLYING SQUID ${(ca.producto||"").toUpperCase()}`;
+  const fechaElab  = ca.fecha_elaboracion ? new Date(ca.fecha_elaboracion) : new Date();
+  const fechaVenc  = new Date(fechaElab); fechaVenc.setFullYear(fechaVenc.getFullYear()+2);
+  const fmt2 = d => {
+    const dd=String(d.getDate()).padStart(2,"0");
+    const mm=String(d.getMonth()+1).padStart(2,"0");
+    return `${dd}-${mm}-${d.getFullYear()}`;
+  };
+  const calibre = ca.calibre || "";
+  const kg = parseFloat(ca.kilos_netos||0).toFixed(2);
+  // Elimina caracteres especiales de ZPL
+  const safe = s => (s||"").replace(/[\^~]/g,"").replace(/[^\x20-\x7E]/g,"");
+
+  const XL = 10;   // x etiqueta (label col)
+  const XV = 220;  // x valor (value col)
+  const DH = 20;   // row height dots
+  const WB = 779;  // inner box width
+
+  // Spanish data rows
+  const spRows = [
+    ["Nombre cientifico:", "Dosidicus gigas"],
+    ["Peso Neto:", `${kg} Kg`],
+    ["Planta elaboradora:", safe(EMPRESA)],
+    ["RUT:", `${safe(RUT_EMPRESA)}  Nro planta: ${NRO_PLANTA}`],
+    ["Res. sanitaria:", RESOLUCION],
+    ["Fecha elaboracion:", fmt2(fechaElab)],
+    ["Fecha vencimiento:", fmt2(fechaVenc)],
+    ["Lote:", safe(ca.lote_codigo)],
+    ...(cliente ? [["Cliente:", safe(cliente)]] : []),
+  ];
+
+  // English data rows
+  const enRows = [
+    ["Scientific name:", "Dosidicus gigas"],
+    ["Net weight:", `${kg} Kg`],
+    ["Processing plant:", safe(EMPRESA)],
+    ["RUT:", `${safe(RUT_EMPRESA)}  Plant N: ${NRO_PLANTA}`],
+    ["San. Res. N:", RESOLUCION],
+    ["Production date:", fmt2(fechaElab)],
+    ["Expiry date:", fmt2(fechaVenc)],
+    ["Lot:", safe(ca.lote_codigo)],
+    ...(cliente ? [["Customer:", safe(cliente)]] : []),
+  ];
+
+  // ── Posiciones Y ─────────────────────────────────────────
+  const spHdrY  = 5;
+  const spHdrH  = 62;
+  const spDataY = spHdrY + spHdrH + 3;
+  const spEndY  = spDataY + spRows.length * DH;
+  const sepY    = spEndY + 10;
+  const enHdrY  = sepY + 6;
+  const enHdrH  = 62;
+  const enDataY = enHdrY + enHdrH + 3;
+  const enEndY  = enDataY + enRows.length * DH;
+  const numY    = enEndY + 10;
+
+  const spData = spRows.map((r,i)=>
+    `^FO${XL},${spDataY+i*DH}^A0N,14,0^FD${r[0]}^FS^FO${XV},${spDataY+i*DH}^A0N,14,0^FD${r[1]}^FS`
+  ).join("\n");
+
+  const enData = enRows.map((r,i)=>
+    `^FO${XL},${enDataY+i*DH}^A0N,14,0^FD${r[0]}^FS^FO${XV},${enDataY+i*DH}^A0N,14,0^FD${r[1]}^FS`
+  ).join("\n");
+
+  return `^XA
+^LH0,0
+^PW799
+^LL799
+^FO5,5^GB789,789,2^FS
+^FO5,${spHdrY}^GB789,${spHdrH},1^FS
+^FO${XL},${spHdrY+5}^A0N,26,0^FD${safe(productoES)}^FS
+^FO${XL},${spHdrY+36}^A0N,18,0^FDCALIBRE ${safe(calibre)}^FS
+${spData}
+^FO5,${spEndY+3}^GB789,1,1^FS
+^FO${XL},${spEndY+7}^A0N,11,0^FDMantener congelado a -18 C  Consumir cocido^FS
+^FO${XL+220},${spEndY+21}^A0N,20,0^FDCHILE^FS
+^FO5,${sepY}^GB789,4,4^FS
+^FO5,${enHdrY}^GB789,${enHdrH},1^FS
+^FO${XL},${enHdrY+5}^A0N,26,0^FD${safe(productoEN)}^FS
+^FO${XL},${enHdrY+36}^A0N,18,0^FDCALIBER ${safe(calibre)}^FS
+${enData}
+^FO5,${enEndY+3}^GB789,1,1^FS
+^FO${XL},${enEndY+7}^A0N,11,0^FDKeep frozen at -18 C  Consume cooked^FS
+^FO${XL+220},${enEndY+21}^A0N,20,0^FDCHILE^FS
+^FO5,${numY}^GB789,50,1^FS
+^FO${XL+150},${numY+9}^A0N,30,0^FD${safe(ca.numero_caja)}^FS
+^XZ`;
+}
+
+// ── BATCH ZPL: descarga archivo .zpl listo para Zebra ZT411 ─
+const etiquetasZplLote = async (req, res) => {
+  try {
+    const cliente = req.query.cliente || null;
+    const {rows} = await pool.query(`
+      SELECT ca.*, pt.nombre AS producto, cb.nombre AS calibre,
+        l.codigo AS lote_codigo, c.codigo_carro
+      FROM cajas ca
+      JOIN lotes l ON l.id=ca.lote_id
+      LEFT JOIN carros c ON c.id=ca.carro_id
+      JOIN productos_tipo pt ON pt.id=ca.producto_tipo_id
+      LEFT JOIN calibres cb ON cb.id=ca.calibre_id
+      WHERE ca.lote_id=$1
+      ORDER BY c.codigo_carro ASC, ca.numero_caja ASC`, [req.params.lote_id]);
+
+    if (!rows.length) return res.status(404).json({error:"Este lote no tiene cajas"});
+
+    const zpl = rows.map(ca => generarZPL(ca, { cliente })).join("\n");
+    const filename = `etiquetas-${rows[0].lote_codigo}.zpl`;
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send(Buffer.from(zpl, "utf-8"));
+  } catch(e) { return res.status(500).json({error:e.message}); }
+};
+
 module.exports = {
   listar, carrosDeTunel, listarCarros, listarCajas, estadoCarros,
   crearCarro, editarCarro, asignarCaja, marcarListo,
   ingresarCarroTunel, sacarCarroTunel,
   etiquetaCarro, etiquetaCaja, exportarCarrosExcel, etiquetaZebra,
-  etiquetasZebraCarro, etiquetasZebraLote,
+  etiquetasZebraCarro, etiquetasZebraLote, etiquetasZplLote,
   // Flujo simplificado
   carrosVaciosDeTunel, cajasLibresDeLote, asignarCajasAlCarro, congelarCarro,
 };

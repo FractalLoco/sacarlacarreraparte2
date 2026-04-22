@@ -27,6 +27,7 @@ router.post("/carros/:carro_id/congelar",      autenticar, audit("congelar_carro
 router.get("/cajas/:id/etiqueta-zebra",         autenticar, c.etiquetaZebra);
 router.get("/carros/:carro_id/etiquetas-zebra",  autenticar, c.etiquetasZebraCarro);
 router.get("/lotes/:lote_id/etiquetas-zebra",    autenticar, c.etiquetasZebraLote);
+router.get("/lotes/:lote_id/etiquetas-zpl",      autenticar, c.etiquetasZplLote);
 router.put("/cajas/:id/asignar",       autenticar, audit("asignar_caja"),           c.asignarCaja);
 
 module.exports = router;

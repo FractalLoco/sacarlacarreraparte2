@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Printer, PackageX, AlertCircle, Zap, Tag, ChevronDown } from "lucide-react";
+import { Printer, PackageX, AlertCircle, Zap, Download } from "lucide-react";
 import { cajasAPI, lotesAPI, tunelesAPI, despachosAPI } from "../api/client";
 import { C, iS } from "../constants/theme";
 
@@ -13,6 +13,7 @@ export default function ImprimirEtiquetas({ onToast }) {
   const [cliente, setCliente] = useState("");
   const [clientes, setClientes] = useState([]);
   const [abriendo, setAbriendo] = useState(false);
+  const [descargando, setDescargando] = useState(false);
 
   // Para impresión directa de lote existente
   const [loteExistente, setLoteExistente] = useState(null);
@@ -64,6 +65,17 @@ export default function ImprimirEtiquetas({ onToast }) {
     setAbriendo(false);
   };
 
+  const descargarZpl = async (id, nombreCliente) => {
+    setDescargando(true);
+    try {
+      await tunelesAPI.descargarZplLote(id, nombreCliente || null);
+      onToast("Archivo ZPL descargado — envíalo a la Zebra ZT411", "success");
+    } catch (e) {
+      onToast(e.message, "error");
+    }
+    setDescargando(false);
+  };
+
   const loteSeleccionado = lotes.find((l) => l.id === parseInt(lote_id));
 
   return (
@@ -112,30 +124,58 @@ export default function ImprimirEtiquetas({ onToast }) {
             ))}
           </datalist>
 
-          <button
-            onClick={() => loteExistente
-              ? abrirEtiquetasZebra(loteExistente, clienteDirecto)
-              : onToast("Selecciona un lote", "error")
-            }
-            disabled={!loteExistente || abriendo}
-            style={{
-              padding: "11px 0",
-              background: !loteExistente ? C.textMut : `linear-gradient(135deg, ${C.blue900}, ${C.blue600})`,
-              border: "none",
-              borderRadius: 10,
-              color: "white",
-              fontWeight: 800,
-              fontSize: 13,
-              cursor: !loteExistente ? "default" : "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-            }}
-          >
-            <Printer size={15} />
-            {abriendo ? "Preparando..." : "Abrir etiquetas en nueva ventana"}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => loteExistente
+                ? descargarZpl(loteExistente, clienteDirecto)
+                : onToast("Selecciona un lote", "error")
+              }
+              disabled={!loteExistente || descargando}
+              style={{
+                flex: 1,
+                padding: "11px 0",
+                background: !loteExistente ? C.textMut : `linear-gradient(135deg, #059669, #047857)`,
+                border: "none",
+                borderRadius: 10,
+                color: "white",
+                fontWeight: 800,
+                fontSize: 12,
+                cursor: !loteExistente ? "default" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              <Download size={14} />
+              {descargando ? "Generando..." : "Descargar ZPL"}
+            </button>
+            <button
+              onClick={() => loteExistente
+                ? abrirEtiquetasZebra(loteExistente, clienteDirecto)
+                : onToast("Selecciona un lote", "error")
+              }
+              disabled={!loteExistente || abriendo}
+              style={{
+                flex: 1,
+                padding: "11px 0",
+                background: !loteExistente ? C.textMut : `linear-gradient(135deg, ${C.blue900}, ${C.blue600})`,
+                border: "none",
+                borderRadius: 10,
+                color: "white",
+                fontWeight: 800,
+                fontSize: 12,
+                cursor: !loteExistente ? "default" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              <Printer size={14} />
+              {abriendo ? "Preparando..." : "Ver HTML"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -256,29 +296,52 @@ export default function ImprimirEtiquetas({ onToast }) {
               </p>
             </div>
 
-            <button
-              onClick={() => abrirEtiquetasZebra(lote_id, cliente)}
-              disabled={abriendo}
-              style={{
-                width: "100%",
-                padding: 13,
-                background: `linear-gradient(135deg, ${C.blue900}, ${C.blue600})`,
-                border: "none",
-                borderRadius: 10,
-                color: "white",
-                fontWeight: 800,
-                fontSize: 14,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                marginBottom: 10,
-              }}
-            >
-              <Printer size={16} />
-              {abriendo ? "Preparando etiquetas..." : `Abrir ${cajas.length} etiquetas Zebra`}
-            </button>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <button
+                onClick={() => descargarZpl(lote_id, cliente)}
+                disabled={descargando}
+                style={{
+                  flex: 1,
+                  padding: 13,
+                  background: `linear-gradient(135deg, #059669, #047857)`,
+                  border: "none",
+                  borderRadius: 10,
+                  color: "white",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                <Download size={15} />
+                {descargando ? "Generando..." : `Descargar ZPL (${cajas.length})`}
+              </button>
+              <button
+                onClick={() => abrirEtiquetasZebra(lote_id, cliente)}
+                disabled={abriendo}
+                style={{
+                  flex: 1,
+                  padding: 13,
+                  background: `linear-gradient(135deg, ${C.blue900}, ${C.blue600})`,
+                  border: "none",
+                  borderRadius: 10,
+                  color: "white",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                <Printer size={15} />
+                {abriendo ? "Preparando..." : "Ver HTML"}
+              </button>
+            </div>
 
             <button
               onClick={() => { setGenerado(false); setCajas([]); setCliente(""); }}
@@ -298,16 +361,17 @@ export default function ImprimirEtiquetas({ onToast }) {
             </button>
           </div>
 
-          <div style={{ background: "#fef3c7", border: `1px solid #fcd34d`, borderRadius: 10, padding: 12, display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <AlertCircle size={16} color="#92400e" style={{ flexShrink: 0, marginTop: 2 }} />
-            <div style={{ fontSize: 12, color: "#92400e" }}>
-              <p style={{ fontWeight: 700, marginBottom: 4 }}>Instrucciones para imprimir en Zebra ZT411:</p>
-              <ul style={{ margin: 0, paddingLeft: 16 }}>
-                <li>En la nueva ventana, haz clic en "Imprimir todas"</li>
-                <li>Selecciona la Zebra ZT411 como impresora</li>
-                <li>Configura el tamaño de papel a 100 x 100 mm</li>
-                <li>Márgenes en 0 — Escala al 100%</li>
-              </ul>
+          <div style={{ background: "#f0fdf4", border: `1px solid #86efac`, borderRadius: 10, padding: 12, display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <AlertCircle size={16} color="#166534" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ fontSize: 12, color: "#166534" }}>
+              <p style={{ fontWeight: 700, marginBottom: 4 }}>Cómo imprimir en Zebra ZT411 (recomendado):</p>
+              <ol style={{ margin: 0, paddingLeft: 16 }}>
+                <li>Haz clic en <strong>Descargar ZPL</strong> — se descarga un archivo .zpl</li>
+                <li>Abre <strong>Zebra Setup Utilities</strong> → pestaña "Tools"</li>
+                <li>Clic en "Send File" y selecciona el .zpl descargado</li>
+                <li>La impresora imprimirá cada etiqueta separada automáticamente</li>
+              </ol>
+              <p style={{ marginTop: 6, fontSize: 11 }}>Alternativa por red: <code>copy etiquetas.zpl \\nombrePC\ZebraZT411</code></p>
             </div>
           </div>
         </>
