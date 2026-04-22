@@ -508,14 +508,13 @@ function htmlEtiqueta(ca, opts = {}) {
   <div style="padding:1mm 1.5mm;flex-shrink:0">
     <div class="fila"><span class="lbl">Nombre científico:</span><span class="val"><i>Dosidicus gigas</i></span></div>
     <div class="fila"><span class="lbl">Peso Neto:</span><span class="val">${kg} Kg</span></div>
-    <div class="fila"><span class="lbl">Planta elaboradora:</span><span class="val">${EMPRESA}</span></div>
-    <div class="fila"><span class="lbl">RUT:</span><span class="val">${RUT_EMPRESA} &nbsp;·&nbsp; Nro planta: ${NRO_PLANTA}</span></div>
-    <div class="fila"><span class="lbl">Res. sanitaria:</span><span class="val">${RESOLUCION}</span></div>
+    <div class="fila"><span class="lbl">Planta elaboradora:</span><span class="val">${EMPRESA} &nbsp;·&nbsp; RUT: ${RUT_EMPRESA}</span></div>
+    <div class="fila"><span class="lbl">Nro planta / Res.:</span><span class="val">${NRO_PLANTA} &nbsp;·&nbsp; ${RESOLUCION}</span></div>
     <div class="fila"><span class="lbl">Fecha elaboración:</span><span class="val">${fmt2(fechaElab)}</span></div>
     <div class="fila"><span class="lbl">Fecha vencimiento:</span><span class="val">${fmt2(fechaVenc)}</span></div>
     <div class="fila"><span class="lbl">Lote:</span><span class="val">${ca.lote_codigo}</span></div>
     ${filaCliente}
-    <div style="font-size:7pt;text-align:center;margin-top:0.5mm">Mantener congelado a -18°C &nbsp;·&nbsp; Consumir cocido</div>
+    <div style="font-size:6pt;text-align:center;margin-top:0.5mm">Mantener congelado a -18°C &nbsp;·&nbsp; Consumir cocido</div>
     <div class="pais">CHILE</div>
   </div>
   <div class="sep"></div>
@@ -526,14 +525,13 @@ function htmlEtiqueta(ca, opts = {}) {
   <div style="padding:1mm 1.5mm;flex-shrink:0">
     <div class="fila"><span class="lbl">Scientific name:</span><span class="val"><i>Dosidicus gigas</i></span></div>
     <div class="fila"><span class="lbl">Net weight:</span><span class="val">${kg} Kg</span></div>
-    <div class="fila"><span class="lbl">Processing plant:</span><span class="val">${EMPRESA}</span></div>
-    <div class="fila"><span class="lbl">RUT:</span><span class="val">${RUT_EMPRESA} &nbsp;·&nbsp; Plant N°: ${NRO_PLANTA}</span></div>
-    <div class="fila"><span class="lbl">San. Res. N°:</span><span class="val">${RESOLUCION}</span></div>
+    <div class="fila"><span class="lbl">Processing plant:</span><span class="val">${EMPRESA} &nbsp;·&nbsp; RUT: ${RUT_EMPRESA}</span></div>
+    <div class="fila"><span class="lbl">Plant N° / San.Res.:</span><span class="val">${NRO_PLANTA} &nbsp;·&nbsp; ${RESOLUCION}</span></div>
     <div class="fila"><span class="lbl">Production date:</span><span class="val">${fmt2(fechaElab)}</span></div>
     <div class="fila"><span class="lbl">Expiry date:</span><span class="val">${fmt2(fechaVenc)}</span></div>
     <div class="fila"><span class="lbl">Lot:</span><span class="val">${ca.lote_codigo}</span></div>
     ${filaCliente}
-    <div style="font-size:7pt;text-align:center;margin-top:0.5mm">Keep frozen at -18°C &nbsp;·&nbsp; Consume cooked</div>
+    <div style="font-size:6pt;text-align:center;margin-top:0.5mm">Keep frozen at -18°C &nbsp;·&nbsp; Consume cooked</div>
     <div class="pais">CHILE</div>
   </div>
   <div class="num">${ca.numero_caja}</div>
@@ -544,22 +542,22 @@ function htmlEtiqueta(ca, opts = {}) {
 const CSS_ETIQUETA = `
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
   body{background:#fff;color:#000}
-  .etiqueta{width:100mm;height:100mm;padding:2mm;display:flex;flex-direction:column;page-break-after:always;border:1px solid #000}
-  .etiqueta:last-child{page-break-after:auto}
-  .bloque{border:1px solid #000;padding:2mm 2.5mm;flex-shrink:0}
-  .titulo{font-size:10pt;font-weight:900;text-align:center;text-transform:uppercase;line-height:1.25}
-  .subtitulo{font-size:9pt;font-weight:700;text-align:center;text-transform:uppercase}
-  .sep{border-top:1px solid #000;margin:1.5mm 0;flex-shrink:0}
-  .fila{display:flex;gap:2mm;font-size:7.5pt;line-height:1.5}
-  .lbl{font-weight:700;min-width:32mm;flex-shrink:0}
-  .val{flex:1}
-  .num{font-size:9pt;font-weight:900;text-align:center;background:#000;color:#fff;padding:1mm 2mm;letter-spacing:1px;margin-top:1mm;border-radius:1mm}
-  .pais{font-size:13pt;font-weight:900;text-align:center;margin-top:0.5mm}
+  .etiqueta{width:100mm;height:100mm;padding:1.5mm;display:flex;flex-direction:column;page-break-after:always;page-break-inside:avoid;break-after:page;overflow:hidden}
+  .etiqueta:last-child{page-break-after:auto;break-after:auto}
+  .bloque{border:1px solid #000;padding:1.2mm 2mm;flex-shrink:0}
+  .titulo{font-size:8.5pt;font-weight:900;text-align:center;text-transform:uppercase;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .subtitulo{font-size:7.5pt;font-weight:700;text-align:center;text-transform:uppercase}
+  .sep{border-top:1px solid #000;margin:0.8mm 0;flex-shrink:0}
+  .fila{display:flex;gap:1.5mm;font-size:6.5pt;line-height:1.32}
+  .lbl{font-weight:700;min-width:27mm;flex-shrink:0}
+  .val{flex:1;overflow:hidden}
+  .num{font-size:8pt;font-weight:900;text-align:center;background:#000;color:#fff;padding:0.5mm 2mm;letter-spacing:1px;margin-top:0.8mm;flex-shrink:0}
+  .pais{font-size:10pt;font-weight:900;text-align:center;margin-top:0.3mm}
   .noprint{padding:8px;background:#f0f5ff;border-bottom:1px solid #bfcffe}
   @media print{
     @page{size:100mm 100mm;margin:0}
     .noprint{display:none}
-    .etiqueta{border:none;page-break-after:always}
+    .etiqueta{border:none}
   }
 `;
 
