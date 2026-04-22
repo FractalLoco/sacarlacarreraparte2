@@ -36,9 +36,15 @@ app.get("/health",(_req,res)=>res.json({status:"ok",sistema:"TR3S AL MAR v5"}));
 app.use((_req,res)=>res.status(404).json({error:"Ruta no encontrada"}));
 app.use((err,_req,res,_n)=>{console.error(err.message);res.status(500).json({error:"Error interno"});});
 
+const limpiarRefreshTokens = () =>
+  pool.query("DELETE FROM refresh_tokens WHERE expires_at < NOW() OR revocado=true")
+      .catch(e => console.error("cleanup refresh_tokens:", e.message));
+
 const start=async()=>{
   try{
     await pool.query("SELECT 1");
+    limpiarRefreshTokens();
+    setInterval(limpiarRefreshTokens, 24 * 60 * 60 * 1000);
     app.listen(PORT,()=>{
       console.log("\n🦑 TR3S AL MAR — Sistema de Produccion v5");
       console.log(`   Puerto: http://localhost:${PORT}`);

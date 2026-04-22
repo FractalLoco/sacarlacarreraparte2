@@ -340,3 +340,20 @@ ALTER TABLE haccp_registros ADD COLUMN IF NOT EXISTS folio VARCHAR(30);
 ALTER TABLE carros ALTER COLUMN lote_id DROP NOT NULL;
 ALTER TABLE carros DROP CONSTRAINT IF EXISTS carros_lote_id_codigo_carro_key;
 DROP INDEX IF EXISTS idx_carros_lote;
+
+-- v5.1: seguridad de autenticación (token_version + refresh_tokens)
+ALTER TABLE usuarios
+  ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id          SERIAL PRIMARY KEY,
+  usuario_id  INT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL UNIQUE,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  revocado    BOOLEAN NOT NULL DEFAULT false,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rt_hash    ON refresh_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_rt_usuario ON refresh_tokens(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_rt_expires ON refresh_tokens(expires_at);
