@@ -106,8 +106,8 @@ export const tunelesAPI={
   cajasLibresDeLote:lote_id=>apiGet(`/tuneles/lote/${lote_id}/cajas-libres`),
   asignarCajasAlCarro:(carro_id,d)=>apiPost(`/tuneles/carros/${carro_id}/asignar-cajas`,d),
   congelarCarro:(carro_id,d)=>apiPost(`/tuneles/carros/${carro_id}/congelar`,d),
-  etiquetasZebraCarro:carro_id=>apiGet(`/tuneles/carros/${carro_id}/etiquetas-zebra`),
-  etiquetasZebraLote:lote_id=>apiGet(`/tuneles/lotes/${lote_id}/etiquetas-zebra`),
+  etiquetasZebraCarro:(carro_id,cliente)=>apiGet(`/tuneles/carros/${carro_id}/etiquetas-zebra${cliente?`?cliente=${encodeURIComponent(cliente)}`:""}`),
+  etiquetasZebraLote:(lote_id,cliente)=>apiGet(`/tuneles/lotes/${lote_id}/etiquetas-zebra${cliente?`?cliente=${encodeURIComponent(cliente)}`:""}`),
   etiquetaCaja:id=>apiGet(`/tuneles/cajas/${id}/etiqueta`),
   exportarExcel:(f={})=>apiGet("/tuneles/exportar/carros?"+new URLSearchParams(limpiar(f))).then(b=>descargar(b,`carros-cajas-${hoy()}.xlsx`)),
 };

@@ -424,7 +424,7 @@ const exportarCarrosExcel = async (req,res) => {
   } catch(e) { return res.status(500).json({error:e.message}); }
 };
 
-// ── ETIQUETA ZEBRA 10×10 cm — bilingüe ──────────────────────
+// ── ETIQUETA ZEBRA 10×10 cm — individual ────────────────────
 const etiquetaZebra = async (req,res) => {
   try {
     const {rows} = await pool.query(`
@@ -438,89 +438,15 @@ const etiquetaZebra = async (req,res) => {
       WHERE ca.id=$1`,[req.params.id]);
     if (!rows.length) return res.status(404).json({error:"Caja no encontrada"});
     const ca = rows[0];
-
-    const PROD_EN = {"Filete":"Fillet","Aleta":"Wing","Tentaculo":"Tentacle",
-      "Tentáculos":"Tentacles","Reproductor":"Mantle","Manto":"Mantle","Desecho":"Waste"};
-    const productoEN = PROD_EN[ca.producto] || ca.producto;
-
-    const fechaElab  = ca.fecha_elaboracion ? new Date(ca.fecha_elaboracion) : new Date();
-    const fechaVenc  = new Date(fechaElab); fechaVenc.setFullYear(fechaVenc.getFullYear()+2);
-    const fmt2 = d => {
-      const dd=String(d.getDate()).padStart(2,"0");
-      const mm=String(d.getMonth()+1).padStart(2,"0");
-      const yy=d.getFullYear();
-      return `${dd}-${mm}-${yy}`;
-    };
-
-    const EMPRESA   = "COMERCIAL VYF TRADING SPA";
-    const EXPORTADORA = "COMERCIALIZADORA PACIFIC SEA LTDA.";
-    const NRO_PLANTA= "8476";
-    const RESOLUCION= "2105";
-    const calibreStr= ca.calibre||"";
-    const kg = parseFloat(ca.kilos_netos||0).toFixed(2);
+    const cliente = req.query.cliente || null;
 
     const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
 <title>Etiqueta ${ca.numero_caja}</title>
-<style>
-  @page{size:100mm 100mm;margin:0}
-  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
-  body{width:100mm;height:100mm;background:#fff;color:#000}
-  .etiqueta{width:100mm;height:100mm;padding:2mm;display:flex;flex-direction:column;gap:0}
-  .bloque{border:1px solid #000;padding:2mm 2.5mm;flex-shrink:0}
-  .titulo{font-size:10pt;font-weight:900;text-align:center;text-transform:uppercase;line-height:1.25}
-  .subtitulo{font-size:9pt;font-weight:700;text-align:center;text-transform:uppercase}
-  .sep{border-top:1px solid #000;margin:1.5mm 0;flex-shrink:0}
-  .fila{display:flex;gap:2mm;font-size:7.5pt;line-height:1.5}
-  .lbl{font-weight:700;min-width:32mm;flex-shrink:0}
-  .val{flex:1}
-  .num{font-size:9pt;font-weight:900;text-align:center;background:#000;color:#fff;padding:1mm 2mm;letter-spacing:1px;margin-top:1mm;border-radius:1mm}
-  .pais{font-size:13pt;font-weight:900;text-align:center;margin-top:0.5mm}
-  .noprint{padding:6px;margin-bottom:4mm}
-  @media print{.noprint{display:none};body{width:100mm;height:100mm}}
-</style></head><body>
+<style>${CSS_ETIQUETA}</style></head><body>
 <div class="noprint">
-  <button onclick="window.print()" style="padding:5px 14px;background:#0a1a4a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px">🖨️ Imprimir Zebra 10×10</button>
+  <button onclick="window.print()" style="padding:5px 14px;background:#0a1a4a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px">Imprimir Zebra 10x10</button>
 </div>
-<div class="etiqueta">
-  <!-- BLOQUE ESPAÑOL -->
-  <div class="bloque">
-    <div class="titulo">${ca.producto.toUpperCase()} DE JIBIA CONGELADO</div>
-    <div class="subtitulo">CALIBRE ${calibreStr}</div>
-  </div>
-  <div style="padding:1mm 1.5mm;flex-shrink:0">
-    <div class="fila"><span class="lbl">Nombre científico:</span><span class="val"><i>Dosidicus gigas</i></span></div>
-    <div class="fila"><span class="lbl">Presentación:</span><span class="val">${kg} Kg</span></div>
-    <div class="fila"><span class="lbl">Peso Neto:</span><span class="val">${kg} Kg</span></div>
-    <div class="fila"><span class="lbl">Planta elaboradora:</span><span class="val">${EMPRESA}</span></div>
-    <div class="fila"><span class="lbl">Nro planta:</span><span class="val">${NRO_PLANTA} &nbsp; Res. sanitaria: ${RESOLUCION}</span></div>
-    <div class="fila"><span class="lbl">Fecha elaboración:</span><span class="val">${fmt2(fechaElab)}</span></div>
-    <div class="fila"><span class="lbl">Fecha vencimiento:</span><span class="val">${fmt2(fechaVenc)}</span></div>
-    <div class="fila"><span class="lbl">Lote:</span><span class="val">${ca.lote_codigo}</span></div>
-    <div style="font-size:7pt;text-align:center;margin-top:0.5mm">Mantener congelado a -18°C &nbsp;·&nbsp; Consumir cocido</div>
-    <div class="pais">CHILE</div>
-  </div>
-
-  <div class="sep"></div>
-
-  <!-- BLOQUE INGLÉS -->
-  <div class="bloque">
-    <div class="titulo">FROZEN JUMBO FLYING SQUID ${productoEN.toUpperCase()}</div>
-    <div class="subtitulo">CALIBER ${calibreStr}</div>
-  </div>
-  <div style="padding:1mm 1.5mm;flex-shrink:0">
-    <div class="fila"><span class="lbl">Scientific name:</span><span class="val"><i>Dosidicus gigas</i></span></div>
-    <div class="fila"><span class="lbl">Net weight:</span><span class="val">${kg} Kg</span></div>
-    <div class="fila"><span class="lbl">Processing plant:</span><span class="val">${EMPRESA}</span></div>
-    <div class="fila"><span class="lbl">Plant number:</span><span class="val">${NRO_PLANTA} &nbsp; San. Resolution N°: ${RESOLUCION}</span></div>
-    <div class="fila"><span class="lbl">Production date:</span><span class="val">${fmt2(fechaElab)}</span></div>
-    <div class="fila"><span class="lbl">Expiry date:</span><span class="val">${fmt2(fechaVenc)}</span></div>
-    <div class="fila"><span class="lbl">Lot:</span><span class="val">${ca.lote_codigo}</span></div>
-    <div class="fila"><span class="lbl">Exporter:</span><span class="val">${EXPORTADORA}</span></div>
-    <div style="font-size:7pt;text-align:center;margin-top:0.5mm">Keep frozen at -18°C &nbsp;·&nbsp; Consume cooked</div>
-    <div class="pais">CHILE</div>
-  </div>
-  <div class="num">${ca.numero_caja}</div>
-</div>
+${htmlEtiqueta(ca, { cliente })}
 </body></html>`;
 
     res.setHeader("Content-Type","text/html; charset=utf-8");
@@ -528,11 +454,38 @@ const etiquetaZebra = async (req,res) => {
   } catch(e){ return res.status(500).json({error:e.message}); }
 };
 
+// ── Constantes de empresa (actualizar RUT_EMPRESA con el real) ──
+const EMPRESA     = "TR3S AL MAR LTDA";
+const RUT_EMPRESA = "76.XXX.XXX-X"; // <- Reemplazar con RUT real
+const NRO_PLANTA  = "8476";
+const RESOLUCION  = "2105";
+
+// ── Nombres de producto bilingüe ─────────────────────────────
+const PROD_ES = {
+  "Filete":      "FILETE DE JIBIA CONGELADO",
+  "Aleta":       "ALETA DE JIBIA CONGELADA",
+  "Tentaculo":   "TENTACULO DE JIBIA CONGELADO",
+  "Tentáculos":  "TENTACULOS DE JIBIA CONGELADOS",
+  "Reproductor": "REPRODUCTOR DE JIBIA CONGELADO",
+  "Manto":       "MANTO DE JIBIA CONGELADO",
+  "Desecho":     "DESECHO DE JIBIA",
+};
+const PROD_EN = {
+  "Filete":      "FROZEN JUMBO FLYING SQUID FILLET",
+  "Aleta":       "FROZEN JUMBO FLYING SQUID FIN",
+  "Tentaculo":   "FROZEN JUMBO FLYING SQUID TENTACLES",
+  "Tentáculos":  "FROZEN JUMBO FLYING SQUID TENTACLES",
+  "Reproductor": "FROZEN JUMBO FLYING SQUID MANTLE",
+  "Manto":       "FROZEN JUMBO FLYING SQUID MANTLE",
+  "Desecho":     "JUMBO FLYING SQUID WASTE",
+};
+
 // ── Helper: HTML de una etiqueta 10×10 (sin head/body) ──────
-function htmlEtiqueta(ca) {
-  const PROD_EN = {"Filete":"Fillet","Aleta":"Wing","Tentaculo":"Tentacle",
-    "Tentáculos":"Tentacles","Reproductor":"Mantle","Manto":"Mantle","Desecho":"Waste"};
-  const productoEN = PROD_EN[ca.producto] || ca.producto;
+// opts: { cliente: string|null }
+function htmlEtiqueta(ca, opts = {}) {
+  const { cliente = null } = opts;
+  const productoES = PROD_ES[ca.producto] || `${(ca.producto||"").toUpperCase()} DE JIBIA CONGELADO`;
+  const productoEN = PROD_EN[ca.producto] || `FROZEN JUMBO FLYING SQUID ${(ca.producto||"").toUpperCase()}`;
   const fechaElab  = ca.fecha_elaboracion ? new Date(ca.fecha_elaboracion) : new Date();
   const fechaVenc  = new Date(fechaElab); fechaVenc.setFullYear(fechaVenc.getFullYear()+2);
   const fmt2 = d => {
@@ -540,45 +493,46 @@ function htmlEtiqueta(ca) {
     const mm=String(d.getMonth()+1).padStart(2,"0");
     return `${dd}-${mm}-${d.getFullYear()}`;
   };
-  const EMPRESA     = "COMERCIAL VYF TRADING SPA";
-  const EXPORTADORA = "COMERCIALIZADORA PACIFIC SEA LTDA.";
-  const NRO_PLANTA  = "8476";
-  const RESOLUCION  = "2105";
-  const calibreStr  = ca.calibre || "";
+  const calibreStr = ca.calibre || "";
   const kg = parseFloat(ca.kilos_netos||0).toFixed(2);
+  const filaCliente = cliente
+    ? `<div class="fila"><span class="lbl">Cliente / Customer:</span><span class="val">${cliente}</span></div>`
+    : "";
 
   return `
 <div class="etiqueta">
   <div class="bloque">
-    <div class="titulo">${(ca.producto||"").toUpperCase()} DE JIBIA CONGELADO</div>
+    <div class="titulo">${productoES}</div>
     <div class="subtitulo">CALIBRE ${calibreStr}</div>
   </div>
   <div style="padding:1mm 1.5mm;flex-shrink:0">
     <div class="fila"><span class="lbl">Nombre científico:</span><span class="val"><i>Dosidicus gigas</i></span></div>
-    <div class="fila"><span class="lbl">Presentación:</span><span class="val">${kg} Kg</span></div>
     <div class="fila"><span class="lbl">Peso Neto:</span><span class="val">${kg} Kg</span></div>
     <div class="fila"><span class="lbl">Planta elaboradora:</span><span class="val">${EMPRESA}</span></div>
-    <div class="fila"><span class="lbl">Nro planta:</span><span class="val">${NRO_PLANTA} &nbsp;·&nbsp; Res. sanitaria: ${RESOLUCION}</span></div>
+    <div class="fila"><span class="lbl">RUT:</span><span class="val">${RUT_EMPRESA} &nbsp;·&nbsp; Nro planta: ${NRO_PLANTA}</span></div>
+    <div class="fila"><span class="lbl">Res. sanitaria:</span><span class="val">${RESOLUCION}</span></div>
     <div class="fila"><span class="lbl">Fecha elaboración:</span><span class="val">${fmt2(fechaElab)}</span></div>
     <div class="fila"><span class="lbl">Fecha vencimiento:</span><span class="val">${fmt2(fechaVenc)}</span></div>
     <div class="fila"><span class="lbl">Lote:</span><span class="val">${ca.lote_codigo}</span></div>
+    ${filaCliente}
     <div style="font-size:7pt;text-align:center;margin-top:0.5mm">Mantener congelado a -18°C &nbsp;·&nbsp; Consumir cocido</div>
     <div class="pais">CHILE</div>
   </div>
   <div class="sep"></div>
   <div class="bloque">
-    <div class="titulo">FROZEN JUMBO FLYING SQUID ${productoEN.toUpperCase()}</div>
+    <div class="titulo">${productoEN}</div>
     <div class="subtitulo">CALIBER ${calibreStr}</div>
   </div>
   <div style="padding:1mm 1.5mm;flex-shrink:0">
     <div class="fila"><span class="lbl">Scientific name:</span><span class="val"><i>Dosidicus gigas</i></span></div>
     <div class="fila"><span class="lbl">Net weight:</span><span class="val">${kg} Kg</span></div>
     <div class="fila"><span class="lbl">Processing plant:</span><span class="val">${EMPRESA}</span></div>
-    <div class="fila"><span class="lbl">Plant number:</span><span class="val">${NRO_PLANTA} &nbsp;·&nbsp; San. Res. N°: ${RESOLUCION}</span></div>
+    <div class="fila"><span class="lbl">RUT:</span><span class="val">${RUT_EMPRESA} &nbsp;·&nbsp; Plant N°: ${NRO_PLANTA}</span></div>
+    <div class="fila"><span class="lbl">San. Res. N°:</span><span class="val">${RESOLUCION}</span></div>
     <div class="fila"><span class="lbl">Production date:</span><span class="val">${fmt2(fechaElab)}</span></div>
     <div class="fila"><span class="lbl">Expiry date:</span><span class="val">${fmt2(fechaVenc)}</span></div>
     <div class="fila"><span class="lbl">Lot:</span><span class="val">${ca.lote_codigo}</span></div>
-    <div class="fila"><span class="lbl">Exporter:</span><span class="val">${EXPORTADORA}</span></div>
+    ${filaCliente}
     <div style="font-size:7pt;text-align:center;margin-top:0.5mm">Keep frozen at -18°C &nbsp;·&nbsp; Consume cooked</div>
     <div class="pais">CHILE</div>
   </div>
@@ -612,6 +566,7 @@ const CSS_ETIQUETA = `
 // ── BATCH: todas las etiquetas de un carro ───────────────────
 const etiquetasZebraCarro = async (req,res) => {
   try {
+    const cliente = req.query.cliente || null;
     const {rows} = await pool.query(`
       SELECT ca.*, pt.nombre AS producto, cb.nombre AS calibre,
         l.codigo AS lote_codigo, c.codigo_carro
@@ -632,15 +587,16 @@ const etiquetasZebraCarro = async (req,res) => {
 <style>${CSS_ETIQUETA}</style></head><body>
 <div class="noprint">
   <button onclick="window.print()" style="padding:8px 20px;background:#0a1a4a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;margin-right:12px">
-    🖨️ Imprimir todas (${rows.length} etiquetas)
+    Imprimir todas (${rows.length} etiquetas)
   </button>
   <span style="font-size:12px;color:#64748b">
     Carro: <strong>${rows[0].codigo_carro}</strong> &nbsp;·&nbsp;
     Lote: <strong>${rows[0].lote_codigo}</strong> &nbsp;·&nbsp;
     ${rows.length} cajas &nbsp;·&nbsp; ${totalKg} kg totales
+    ${cliente ? `&nbsp;·&nbsp; Cliente: <strong>${cliente}</strong>` : ""}
   </span>
 </div>
-${rows.map(ca => htmlEtiqueta(ca)).join("")}
+${rows.map(ca => htmlEtiqueta(ca, { cliente })).join("")}
 </body></html>`;
 
     res.setHeader("Content-Type","text/html; charset=utf-8");
@@ -651,6 +607,7 @@ ${rows.map(ca => htmlEtiqueta(ca)).join("")}
 // ── BATCH: todas las etiquetas de un lote ────────────────────
 const etiquetasZebraLote = async (req,res) => {
   try {
+    const cliente = req.query.cliente || null;
     const {rows} = await pool.query(`
       SELECT ca.*, pt.nombre AS producto, cb.nombre AS calibre,
         l.codigo AS lote_codigo, c.codigo_carro
@@ -672,17 +629,18 @@ const etiquetasZebraLote = async (req,res) => {
 <style>${CSS_ETIQUETA}</style></head><body>
 <div class="noprint">
   <button onclick="window.print()" style="padding:8px 20px;background:#0a1a4a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;margin-right:12px">
-    🖨️ Imprimir todas (${rows.length} etiquetas)
+    Imprimir todas (${rows.length} etiquetas)
   </button>
   <span style="font-size:12px;color:#64748b">
     Lote: <strong>${lote_codigo}</strong> &nbsp;·&nbsp;
     ${rows.length} cajas &nbsp;·&nbsp; ${totalKg} kg totales
+    ${cliente ? `&nbsp;·&nbsp; Cliente: <strong>${cliente}</strong>` : ""}
   </span>
   <div style="margin-top:6px;font-size:11px;color:#64748b">
-    Cada etiqueta se imprime en 100×100mm. Configura la impresora Zebra en 100×100mm antes de imprimir.
+    Impresora Zebra ZT411 — tamaño de etiqueta: 100x100mm
   </div>
 </div>
-${rows.map(ca => htmlEtiqueta(ca)).join("")}
+${rows.map(ca => htmlEtiqueta(ca, { cliente })).join("")}
 </body></html>`;
 
     res.setHeader("Content-Type","text/html; charset=utf-8");
