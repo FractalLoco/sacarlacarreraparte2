@@ -2,9 +2,33 @@
 const pool = require("../config/db");
 const path = require("path");
 const fs   = require("fs");
+const { supabase, BUCKET, usarSupabase } = require("../config/supabase");
 
+// Fallback: carpeta local si no hay Supabase configurado
 const UPLOAD_DIR = path.join(__dirname, "../uploads");
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!usarSupabase && !fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// ── Helper: subir buffer a Supabase Storage ──────────────────
+const subirASupabase = async (buffer, nombreArchivo, mimetype) => {
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(nombreArchivo, buffer, { contentType: mimetype, upsert: false });
+  if (error) throw new Error("Error subiendo a Supabase: " + error.message);
+};
+
+// ── Helper: obtener URL firmada (válida 1 hora) ───────────────
+const urlFirmada = async (nombreArchivo) => {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(nombreArchivo, 3600);
+  if (error) throw new Error("Error generando URL: " + error.message);
+  return data.signedUrl;
+};
+
+// ── Helper: eliminar de Supabase Storage ─────────────────────
+const eliminarDeSupabase = async (nombreArchivo) => {
+  await supabase.storage.from(BUCKET).remove([nombreArchivo]);
+};
 
 // ── LISTAR archivos de un lote ───────────────────────────────
 const listarArchivos = async (req,res) => {
@@ -27,6 +51,15 @@ const subirArchivo = async (req,res) => {
     const { lote_id } = req.params;
     const { categoria="documento", descripcion="" } = req.body;
 
+    if (usarSupabase) {
+      // ── Modo nube: guardar en Supabase Storage ──
+      await subirASupabase(req.file.buffer, req.file.filename, req.file.mimetype);
+    } else {
+      // ── Modo local: guardar en disco ──
+      const destino = path.join(UPLOAD_DIR, req.file.filename);
+      fs.writeFileSync(destino, req.file.buffer);
+    }
+
     const {rows} = await pool.query(
       `INSERT INTO recepcion_archivos
          (lote_id,nombre_original,nombre_archivo,tipo_mime,tamanio_bytes,categoria,descripcion,subido_por)
@@ -36,8 +69,6 @@ const subirArchivo = async (req,res) => {
     );
     return res.status(201).json(rows[0]);
   } catch(e){
-    // Borrar archivo si falló el registro en BD
-    if (req.file?.path) fs.unlink(req.file.path, ()=>{});
     return res.status(500).json({error:e.message});
   }
 };
@@ -48,13 +79,20 @@ const descargarArchivo = async (req,res) => {
     const {rows} = await pool.query(
       "SELECT * FROM recepcion_archivos WHERE id=$1", [req.params.id]);
     if (!rows.length) return res.status(404).json({error:"Archivo no encontrado"});
+    const archivo = rows[0];
 
-    const filePath = path.join(UPLOAD_DIR, rows[0].nombre_archivo);
+    if (usarSupabase) {
+      const url = await urlFirmada(archivo.nombre_archivo);
+      // Redirigir al URL firmado con header para forzar descarga
+      res.setHeader("Content-Disposition", `attachment; filename="${archivo.nombre_original}"`);
+      return res.redirect(url);
+    }
+
+    const filePath = path.join(UPLOAD_DIR, archivo.nombre_archivo);
     if (!fs.existsSync(filePath))
       return res.status(404).json({error:"Archivo no encontrado en disco"});
-
-    res.setHeader("Content-Disposition", `attachment; filename="${rows[0].nombre_original}"`);
-    res.setHeader("Content-Type", rows[0].tipo_mime || "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${archivo.nombre_original}"`);
+    res.setHeader("Content-Type", archivo.tipo_mime || "application/octet-stream");
     return res.sendFile(filePath);
   } catch(e){ return res.status(500).json({error:e.message}); }
 };
@@ -65,12 +103,17 @@ const verArchivo = async (req,res) => {
     const {rows} = await pool.query(
       "SELECT * FROM recepcion_archivos WHERE id=$1", [req.params.id]);
     if (!rows.length) return res.status(404).json({error:"Archivo no encontrado"});
+    const archivo = rows[0];
 
-    const filePath = path.join(UPLOAD_DIR, rows[0].nombre_archivo);
+    if (usarSupabase) {
+      const url = await urlFirmada(archivo.nombre_archivo);
+      return res.redirect(url);
+    }
+
+    const filePath = path.join(UPLOAD_DIR, archivo.nombre_archivo);
     if (!fs.existsSync(filePath))
       return res.status(404).json({error:"Archivo no encontrado en disco"});
-
-    res.setHeader("Content-Type", rows[0].tipo_mime || "application/octet-stream");
+    res.setHeader("Content-Type", archivo.tipo_mime || "application/octet-stream");
     return res.sendFile(filePath);
   } catch(e){ return res.status(500).json({error:e.message}); }
 };
@@ -82,8 +125,12 @@ const eliminarArchivo = async (req,res) => {
       "DELETE FROM recepcion_archivos WHERE id=$1 RETURNING *", [req.params.id]);
     if (!rows.length) return res.status(404).json({error:"No encontrado"});
 
-    const filePath = path.join(UPLOAD_DIR, rows[0].nombre_archivo);
-    if (fs.existsSync(filePath)) fs.unlink(filePath, ()=>{});
+    if (usarSupabase) {
+      await eliminarDeSupabase(rows[0].nombre_archivo);
+    } else {
+      const filePath = path.join(UPLOAD_DIR, rows[0].nombre_archivo);
+      if (fs.existsSync(filePath)) fs.unlink(filePath, ()=>{});
+    }
 
     return res.json({ok:true});
   } catch(e){ return res.status(500).json({error:e.message}); }
