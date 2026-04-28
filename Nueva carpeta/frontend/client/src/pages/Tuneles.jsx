@@ -229,7 +229,7 @@ export default function Tuneles({ onToast }) {
   const kpiCarros = {cargando:carros.filter(c=>c.estado==="cargando").length,listo:carros.filter(c=>c.estado==="listo").length,en_tunel:carros.filter(c=>c.estado==="en_tunel").length,congelado:carros.filter(c=>c.estado==="congelado").length};
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{display:"flex",flexDirection:"column",gap:12,maxWidth:1100,margin:"0 auto",width:"100%"}}>
 
       {/* KPIs */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
@@ -321,7 +321,7 @@ export default function Tuneles({ onToast }) {
                         {cajasCarro.map(ca=>(
                           <div key={ca.id} title={`${ca.numero_caja} — ${ca.producto_tipo_nombre} ${ca.calibre_nombre||""} — ${ca.kilos_netos} kg`}
                             style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:ca.en_inventario?"#dcfce7":"white",border:`1px solid ${ca.en_inventario?"#a7f3d0":C.border}`,borderRadius:7,fontSize:11,cursor:"pointer"}}
-                            onClick={()=>verEtiquetaCaja(ca.id)}>
+                            onClick={()=>verEtiquetaZebra(ca.id)}>
                             <Tag size={9} color={ca.en_inventario?"#15803d":C.blue500}/>
                             <span style={{fontFamily:"monospace",fontWeight:700,color:ca.en_inventario?"#15803d":C.blue900}}>{ca.numero_caja}</span>
                             <span style={{color:C.textMut,fontSize:10}}>{parseFloat(ca.kilos_netos).toFixed(1)}kg</span>
@@ -332,8 +332,8 @@ export default function Tuneles({ onToast }) {
                     )}
                     {/* Acciones */}
                     <div style={{padding:"8px 14px",borderTop:`1px solid ${C.border}`,display:"flex",gap:6,flexWrap:"wrap"}}>
-                      <Btn onClick={()=>verEtiquetaCarro(carro.id)} icon={Tag} label="Etiqueta" color="ghost" small/>
-                      <Btn onClick={()=>imprimirEtiquetasCarro(carro.id, carro.codigo_carro)} icon={Tag} label={`🦓 Todas (${cajasCarro.length})`} color="ghost" small/>
+                      <Btn onClick={()=>verEtiquetaCarro(carro.id)} icon={Tag} label="Etiqueta Carro" color="ghost" small/>
+                      <Btn onClick={()=>imprimirEtiquetasCarro(carro.id, carro.codigo_carro)} icon={Tag} label={`Etiquetas Cajas (${cajasCarro.length})`} color="ghost" small/>
                       {carro.estado==="cargando"&&<Btn onClick={()=>abrirMarcarListo(carro)} icon={CheckCircle} label="Marcar Listo" color="success" small disabled={cajasCarro.length===0}/>}
                       {carro.estado==="listo"&&<Btn onClick={()=>abrirIngresarTunel(carro)} icon={Thermometer} label="Ingresar a Túnel" color="primary" small/>}
                       {carro.estado==="en_tunel"&&<Btn onClick={()=>abrirSalir(carro)} icon={CheckCircle} label="Sacar del Túnel" color="success" small/>}
@@ -392,7 +392,7 @@ export default function Tuneles({ onToast }) {
                           </td>
                           <td style={{padding:"8px 10px"}}>
                             <button onClick={()=>verEtiquetaCaja(ca.id)} style={{display:"flex",alignItems:"center",gap:3,padding:"4px 8px",background:C.blue50,border:`1px solid ${C.blue200}`,borderRadius:6,color:C.blue700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}><Tag size={10}/>Etiqueta</button>
-                            <button onClick={()=>verEtiquetaZebra(ca.id)} style={{display:"flex",alignItems:"center",gap:3,padding:"4px 8px",background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,color:"#92400e",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}} title="Etiqueta Zebra 10×10 bilingüe">🦓 Zebra</button>
+                            <button onClick={()=>verEtiquetaZebra(ca.id)} style={{display:"flex",alignItems:"center",gap:3,padding:"4px 8px",background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,color:"#92400e",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}} title="Etiqueta Zebra 10×10 bilingüe">Zebra</button>
                           </td>
                         </tr>
                       ))}

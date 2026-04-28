@@ -5,7 +5,7 @@ import {
   Truck, FileText, Thermometer, CheckSquare, Square,
   ChevronRight, Save, Printer, AlertTriangle, CheckCircle,
   Upload, Download, Eye, Trash2, Image, File, RefreshCw,
-  History, Package
+  History, Package, XCircle, AlertOctagon
 } from "lucide-react";
 
 const DOCS_CHECKLIST = [
@@ -56,6 +56,8 @@ export default function Recepcion({ onToast }) {
   };
   const [form, setForm]     = useState(formInit);
   const [archNuevo,setAN]   = useState({archivo:null,categoria:"documento",descripcion:""});
+  const [modalRechazo, setModalRechazo] = useState(false);
+  const [motivoRechazo, setMotivoRechazo] = useState("");
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
   useEffect(()=>{
@@ -104,7 +106,7 @@ export default function Recepcion({ onToast }) {
           guia_despacho:form.guia_despacho||null,
           factura_numero:form.factura_numero||null,
           proveedor_id: form.proveedor_id||null,
-          estado:"pendiente",
+          estado_inicial:"en_proceso",
         });
         lote_id = nuevo.id;
       } else {
@@ -127,6 +129,45 @@ export default function Recepcion({ onToast }) {
       onToast("Recepción guardada ✓");
       await cargarArchivos(lote_id);
       setPaso(5);
+    } catch(e){ onToast(e.message,"error"); }
+  };
+
+  const rechazarLote = async () => {
+    if (!motivoRechazo.trim()) return onToast("Ingresa el motivo de rechazo","error");
+    try {
+      let lote_id = form.lote_id;
+      if (form.es_nuevo && (!form.codigo || !form.kilos_brutos)) return onToast("Completa código y kilos primero","error");
+      if (form.es_nuevo) {
+        const payload = {
+          conductor_id:      form.conductor_id||null,
+          patente_camion:    form.patente_camion||null,
+          patente_rampla:    form.patente_rampla||null,
+          empresa_transporte:form.empresa_transporte||null,
+          hora_llegada:      form.hora_llegada,
+          temperatura_carga: form.temperatura_carga?parseFloat(form.temperatura_carga):null,
+          estado_carga:      form.estado_carga,
+          observacion_recepcion:form.observacion_recepcion||null,
+        };
+        const nuevo = await lotesAPI.crear({
+          ...payload,
+          codigo:       form.codigo,
+          kilos_brutos: parseFloat(form.kilos_brutos),
+          guia_despacho:form.guia_despacho||null,
+          factura_numero:form.factura_numero||null,
+          proveedor_id: form.proveedor_id||null,
+          estado_inicial:"rechazado",
+          motivo_rechazo: motivoRechazo.trim(),
+        });
+        lote_id = nuevo.id;
+      } else {
+        await lotesAPI.rechazar(form.lote_id, motivoRechazo.trim());
+      }
+      set("lote_id", lote_id);
+      setModalRechazo(false);
+      setMotivoRechazo("");
+      await lotesAPI.listar({}).then(setLotes).catch(()=>{});
+      onToast("Lote rechazado y registrado","warning");
+      setPaso(6);
     } catch(e){ onToast(e.message,"error"); }
   };
 
@@ -206,9 +247,9 @@ export default function Recepcion({ onToast }) {
                 <p style={{fontSize:11,color:C.textMut}}>{fmtFecha(l.fecha_ingreso)} · {fmt(l.kilos_brutos)} kg · {l.patente_camion||"Sin patente"}{l.patente_rampla?" / Rampla: "+l.patente_rampla:""}</p>
               </div>
               <span style={{padding:"2px 10px",borderRadius:20,fontSize:10,fontWeight:700,
-                background:l.estado==="en_proceso"?"#dcfce7":l.estado==="cerrado"?"#f1f5f9":C.blue50,
-                color:l.estado==="en_proceso"?"#15803d":l.estado==="cerrado"?"#64748b":C.blue700}}>
-                {l.estado}
+                background:l.estado==="en_proceso"?"#dcfce7":l.estado==="cerrado"?"#f1f5f9":l.estado==="rechazado"?"#fef2f2":C.blue50,
+                color:l.estado==="en_proceso"?"#15803d":l.estado==="cerrado"?"#64748b":l.estado==="rechazado"?"#dc2626":C.blue700}}>
+                {l.estado==="rechazado"?"⛔ Rechazado":l.estado}
               </span>
               <div style={{display:"flex",gap:6}}>
                 <button onClick={e=>{e.stopPropagation();imprimirRecepcion(l.id);}}
@@ -220,6 +261,16 @@ export default function Recepcion({ onToast }) {
 
             {loteSelHist===l.id&&(
               <div style={{padding:16,borderTop:`1px solid ${C.border}`}}>
+                {/* Motivo de rechazo si aplica */}
+                {l.estado==="rechazado"&&l.motivo_rechazo&&(
+                  <div style={{background:"#fef2f2",borderRadius:10,padding:"10px 14px",border:"1.5px solid #fca5a5",marginBottom:12,display:"flex",gap:8,alignItems:"flex-start"}}>
+                    <AlertOctagon size={15} color="#dc2626" style={{flexShrink:0,marginTop:1}}/>
+                    <div>
+                      <p style={{fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",marginBottom:2}}>Motivo de Rechazo</p>
+                      <p style={{fontSize:13,color:"#7f1d1d"}}>{l.motivo_rechazo}</p>
+                    </div>
+                  </div>
+                )}
                 {/* Subir nuevo archivo */}
                 <p style={{fontWeight:700,fontSize:13,color:C.blue900,marginBottom:10}}>Archivos adjuntos</p>
                 <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12,padding:12,background:C.blue50,borderRadius:10,border:`1px solid ${C.blue100}`}}>
@@ -507,12 +558,35 @@ export default function Recepcion({ onToast }) {
                 <p style={{fontSize:11,color:C.textMut}}>Declaro que los datos ingresados son correctos</p>
               </div>
             </div>
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={()=>setPaso(3)} style={{flex:1,padding:"11px",background:C.blue50,border:`1px solid ${C.blue200}`,borderRadius:11,color:C.blue700,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>← Atrás</button>
-              <button onClick={()=>{if(!form.recibido_por_nombre)return onToast("Ingresa quien recibe","error");if(!form.firma_conforme)return onToast("Confirma la conformidad","error");guardar();}} style={{flex:2,padding:"11px",background:form.firma_conforme?"#15803d":"#e2e8f0",border:"none",borderRadius:11,color:"white",fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                <Save size={14}/> Guardar Recepción
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button onClick={()=>setPaso(3)} style={{flex:1,padding:"11px",background:C.blue50,border:`1px solid ${C.blue200}`,borderRadius:11,color:C.blue700,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minWidth:80}}>← Atrás</button>
+              <button onClick={()=>setModalRechazo(true)}
+                style={{flex:1,padding:"11px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:11,color:"#dc2626",fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6,minWidth:120}}>
+                <XCircle size={14}/> Rechazar Lote
+              </button>
+              <button onClick={()=>{if(!form.recibido_por_nombre)return onToast("Ingresa quien recibe","error");if(!form.firma_conforme)return onToast("Confirma la conformidad","error");guardar();}} style={{flex:2,padding:"11px",background:form.firma_conforme?"#15803d":"#e2e8f0",border:"none",borderRadius:11,color:"white",fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6,minWidth:140}}>
+                <Save size={14}/> Guardar y Aceptar
               </button>
             </div>
+          </div>
+        )}
+
+        {/* PASO 6 — RECHAZADO */}
+        {paso===6&&(
+          <div style={{padding:20,display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{textAlign:"center",padding:"16px 0 8px"}}>
+              <XCircle size={44} color="#dc2626" style={{margin:"0 auto 10px"}}/>
+              <p style={{fontWeight:800,fontSize:17,color:"#dc2626"}}>Lote Rechazado</p>
+              <p style={{fontSize:13,color:C.textMut,marginTop:4}}>El lote fue registrado como rechazado con su motivo</p>
+            </div>
+            <div style={{background:"#fef2f2",borderRadius:12,padding:14,border:"1.5px solid #fca5a5"}}>
+              <p style={{fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",marginBottom:4}}>Motivo de rechazo</p>
+              <p style={{fontSize:13,color:"#7f1d1d",fontWeight:600}}>{motivoRechazo||"—"}</p>
+            </div>
+            <button onClick={()=>{setPaso(1);setForm(formInit);setArch([]);setFotosCola([]);setMotivoRechazo("");setFotoTemp({archivo:null,descripcion:""});}}
+              style={{padding:"11px",background:`linear-gradient(135deg,${C.blue900},${C.blue600})`,border:"none",borderRadius:11,color:"white",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              Nueva Recepción
+            </button>
           </div>
         )}
 
@@ -573,6 +647,51 @@ export default function Recepcion({ onToast }) {
           </div>
         )}
       </div>
+
+      {/* Modal de Rechazo */}
+      {modalRechazo&&(
+        <div onClick={e=>{if(e.target===e.currentTarget)setModalRechazo(false);}}
+          style={{position:"fixed",inset:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",
+            background:"rgba(10,26,74,.72)",backdropFilter:"blur(4px)"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:"white",borderRadius:16,width:"100%",maxWidth:480,padding:0,
+              boxShadow:"0 20px 60px rgba(0,0,0,.3)",overflow:"hidden"}}>
+            <div style={{padding:"16px 20px",background:"linear-gradient(135deg,#dc2626,#b91c1c)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <AlertOctagon size={18} color="white"/>
+                <span style={{color:"white",fontWeight:800,fontSize:14}}>Rechazar Lote</span>
+              </div>
+              <button onClick={()=>setModalRechazo(false)} style={{background:"none",border:"none",color:"white",fontSize:20,cursor:"pointer",padding:0}}>✕</button>
+            </div>
+            <div style={{padding:20,display:"flex",flexDirection:"column",gap:14}}>
+              <div style={{background:"#fef2f2",borderRadius:10,padding:12,border:"1px solid #fca5a5"}}>
+                <p style={{fontSize:12,color:"#dc2626",fontWeight:600}}>⚠ Atención: Se registrará el lote como RECHAZADO. Esta acción queda registrada en el sistema.</p>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>
+                  Motivo de Rechazo *
+                </label>
+                <textarea rows={4} value={motivoRechazo} onChange={e=>setMotivoRechazo(e.target.value)}
+                  placeholder="Describe el motivo por el cual se rechaza este lote (ej: temperatura fuera de rango, documentación incompleta, producto en mal estado...)"
+                  style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"1.5px solid #fca5a5",fontSize:13,resize:"none",
+                    fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"#fff5f5"}}/>
+              </div>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setModalRechazo(false)}
+                  style={{flex:1,padding:"11px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,color:"#64748b",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                  Cancelar
+                </button>
+                <button onClick={rechazarLote} disabled={!motivoRechazo.trim()}
+                  style={{flex:2,padding:"11px",background:motivoRechazo.trim()?"#dc2626":"#e2e8f0",border:"none",borderRadius:10,
+                    color:"white",fontWeight:700,cursor:motivoRechazo.trim()?"pointer":"not-allowed",fontFamily:"inherit",
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  <XCircle size={14}/> Confirmar Rechazo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

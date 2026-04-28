@@ -172,6 +172,24 @@ const editarCarro = async (req,res) => {
   } catch(e) { return res.status(400).json({error:e.message}); }
 };
 
+const eliminarCarro = async (req,res) => {
+  const client = await pool.connect();
+  try {
+    const {rows:c} = await client.query("SELECT id,estado FROM carros WHERE id=$1",[req.params.id]);
+    if (!c.length) return res.status(404).json({error:"Carro no encontrado"});
+    if (c[0].estado==="en_tunel") return res.status(400).json({error:"No se puede eliminar un carro que está en el túnel"});
+    await client.query("BEGIN");
+    await client.query("UPDATE cajas SET carro_id=NULL WHERE carro_id=$1",[req.params.id]);
+    await client.query("DELETE FROM tuneles_carros WHERE carro_id=$1",[req.params.id]);
+    await client.query("DELETE FROM carros WHERE id=$1",[req.params.id]);
+    await client.query("COMMIT");
+    return res.json({ok:true});
+  } catch(e) {
+    await client.query("ROLLBACK");
+    return res.status(500).json({error:e.message});
+  } finally { client.release(); }
+};
+
 // Asignar caja a carro (o desasignar poniendo carro_id=null)
 const asignarCaja = async (req,res) => {
   try {
@@ -259,30 +277,75 @@ const ingresarCarroTunel = async (req,res) => {
   } finally { client.release(); }
 };
 
-// Sacar del túnel → marca como congelado, NO auto-inventario
+// Sacar del túnel → marca como congelado y registra inventario automáticamente
 const sacarCarroTunel = async (req,res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const {temperatura_salida,observacion} = req.body;
     const carro_id = req.params.id;
+
+    // Obtener info del carro y el túnel
+    const {rows:carroInfo} = await client.query(
+      `SELECT c.id, c.codigo_carro, tc.id AS tc_id, t.nombre AS tunel_nombre
+       FROM carros c
+       JOIN tuneles_carros tc ON tc.carro_id=c.id AND tc.estado='en_tunel'
+       JOIN tuneles t ON t.id=tc.tunel_id
+       WHERE c.id=$1`,[carro_id]);
+    if (!carroInfo.length) { await client.query("ROLLBACK"); return res.status(404).json({error:"Carro no está en ningún túnel"}); }
+    const ci = carroInfo[0];
+
     const {rows:tc} = await client.query(
       `UPDATE tuneles_carros SET estado='completado',fecha_salida=NOW(),
        temperatura_salida=$1,observacion=$2
        WHERE carro_id=$3 AND estado='en_tunel' RETURNING *`,
       [temperatura_salida||null,observacion||null,carro_id]
     );
-    if (!tc.length) { await client.query("ROLLBACK"); return res.status(404).json({error:"Carro no está en ningún túnel"}); }
     await client.query("UPDATE carros SET estado='congelado',updated_at=NOW() WHERE id=$1",[carro_id]);
-    const {rows:cajas} = await client.query(
-      "SELECT COUNT(*) AS n FROM cajas WHERE carro_id=$1 AND en_inventario=false",[carro_id]);
+
+    // Auto-registrar inventario: agrupar cajas por (lote, producto_tipo, calibre)
+    const {rows:grupos} = await client.query(
+      `SELECT ca.lote_id, ca.producto_tipo_id, ca.calibre_id,
+              COUNT(ca.id)::int AS num_cajas,
+              COALESCE(SUM(ca.kilos_netos),0) AS kg_total
+       FROM cajas ca
+       WHERE ca.carro_id=$1
+       GROUP BY ca.lote_id, ca.producto_tipo_id, ca.calibre_id`,[carro_id]);
+
+    const ubicacion = `${ci.tunel_nombre} - Carro ${ci.codigo_carro}`;
+    for (const g of grupos) {
+      const {rows:invRows} = await client.query(
+        `INSERT INTO inventario
+           (lote_id,producto_tipo_id,calibre_id,categoria_inv,kilos_disponibles,num_cajas,ubicacion,updated_at)
+         VALUES ($1,$2,$3,'producto',$4,$5,$6,NOW())
+         ON CONFLICT (lote_id,producto_tipo_id,calibre_id) DO UPDATE
+         SET kilos_disponibles = inventario.kilos_disponibles + EXCLUDED.kilos_disponibles,
+             num_cajas = inventario.num_cajas + EXCLUDED.num_cajas,
+             updated_at = NOW()
+         RETURNING id`,
+        [g.lote_id, g.producto_tipo_id, g.calibre_id||null, g.kg_total, g.num_cajas, ubicacion]
+      );
+      const inv_id = invRows[0].id;
+      const motivo = `Salida túnel ${ci.tunel_nombre} — Carro ${ci.codigo_carro} (${g.num_cajas} cajas, ${parseFloat(g.kg_total).toFixed(2)} kg)`;
+      await client.query(
+        `INSERT INTO inventario_movimientos
+           (inventario_id,tipo,cantidad_kg,cantidad_cajas,motivo,fecha,registrado_por,carro_id)
+         VALUES ($1,'entrada',$2,$3,$4,CURRENT_DATE,$5,$6)`,
+        [inv_id, g.kg_total, g.num_cajas, motivo, req.usuario.id, carro_id]
+      );
+    }
+    // Marcar todas las cajas como en_inventario=true
+    await client.query("UPDATE cajas SET en_inventario=true WHERE carro_id=$1",[carro_id]);
+
     await client.query("COMMIT");
+    const totalCajas = grupos.reduce((s,g)=>s+g.num_cajas,0);
+    const totalKg    = grupos.reduce((s,g)=>s+parseFloat(g.kg_total),0);
     return res.json({
       ...tc[0],
-      cajas_pendientes_inventario: parseInt(cajas[0].n),
-      mensaje: parseInt(cajas[0].n)>0 ?
-        `Carro congelado. Hay ${cajas[0].n} cajas listas para registrar en inventario.` :
-        "Carro congelado correctamente."
+      cajas_inventariadas: totalCajas,
+      kg_inventariados: totalKg.toFixed(2),
+      grupos_inventariados: grupos.length,
+      mensaje: `✓ Carro congelado. ${totalCajas} cajas (${totalKg.toFixed(1)} kg) registradas en inventario automáticamente.`
     });
   } catch(e) {
     await client.query("ROLLBACK");
@@ -308,7 +371,7 @@ const etiquetaCarro = async (req,res) => {
       LEFT JOIN tuneles t ON t.id=tc.tunel_id
       WHERE c.id=$1
       GROUP BY c.id,u.nombre,t.nombre,tc.fecha_ingreso,tc.temperatura_ingreso,tc.temperatura_salida,tc.fecha_salida
-      ORDER BY tc.created_at DESC LIMIT 1`,[req.params.id]);
+      ORDER BY tc.fecha_ingreso DESC NULLS LAST LIMIT 1`,[req.params.id]);
     if (!c.length) return res.status(404).json({error:"Carro no encontrado"});
     const {rows:cajas} = await pool.query(`
       SELECT ca.*, pt.nombre AS producto, cb.nombre AS calibre
@@ -324,7 +387,7 @@ const etiquetaCarro = async (req,res) => {
 <style>@page{size:A5 landscape;margin:6mm}*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif}body{background:white;color:#1e293b}.card{border:2.5px solid #0d2260;border-radius:8px;padding:10px}.header{background:#0d2260;color:white;padding:8px 12px;border-radius:5px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.title{font-size:15px;font-weight:900}.badge{background:#2563ff;border-radius:4px;padding:4px 14px;font-size:16px;font-weight:900;letter-spacing:2px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px}.field{background:#f0f5ff;border-radius:5px;padding:5px 7px}.label{font-size:8px;font-weight:700;color:#3d5080;text-transform:uppercase;letter-spacing:.4px}.value{font-size:13px;font-weight:800;color:#0d2260;margin-top:1px}table{width:100%;border-collapse:collapse;font-size:9px}th{background:#0d2260;color:white;padding:3px 5px;text-align:left}td{padding:3px 5px;border-bottom:1px solid #e2e8f0}tr:nth-child(even)td{background:#f0f5ff}.footer{margin-top:6px;font-size:8px;color:#64748b;text-align:center;border-top:1px solid #e2e8f0;padding-top:5px}.noprint{margin-bottom:8px}@media print{.noprint{display:none}}</style></head><body>
 <button class="noprint" onclick="window.print()" style="padding:7px 14px;background:#0d2260;color:white;border:none;border-radius:5px;cursor:pointer">🖨️ Imprimir</button>
 <div class="card">
-<div class="header"><div><div class="title">TR3S AL MAR LTDA</div><div style="font-size:9px;opacity:.6">Sistema de Producción v5</div></div><div class="badge">${carro.codigo_carro}</div></div>
+<div class="header"><div><div class="title">TRES AL MAR LTDA</div><div style="font-size:9px;opacity:.6">Sistema de Producción v5</div></div><div class="badge">${carro.codigo_carro}</div></div>
 <div class="grid">
 <div class="field"><div class="label">Carro</div><div class="value">${carro.codigo_carro}</div></div>
 <div class="field" style="grid-column:span 2"><div class="label">Lotes</div><div class="value" style="font-size:11px">${carro.lotes_codigos||'—'}</div></div>
@@ -340,7 +403,7 @@ const etiquetaCarro = async (req,res) => {
 <table><thead><tr><th>N° Caja</th><th>Producto</th><th>Calibre</th><th>Kilos Netos</th><th>Fecha Elab.</th><th>Inventario</th></tr></thead><tbody>
 ${cajas.map(ca=>`<tr><td><strong>${ca.numero_caja}</strong></td><td>${ca.producto}</td><td>${ca.calibre||"---"}</td><td>${fn(ca.kilos_netos)} kg</td><td>${f(ca.fecha_elaboracion)}</td><td>${ca.en_inventario?"✅":"⏳"}</td></tr>`).join("")}
 </tbody></table>
-<div class="footer">Generado: ${new Date().toLocaleString("es-CL")} | TR3S AL MAR — Sistema Producción v5</div></div></body></html>`;
+<div class="footer">Generado: ${new Date().toLocaleString("es-CL")} | TRES AL MAR — Sistema Producción v5</div></div></body></html>`;
     res.setHeader("Content-Type","text/html; charset=utf-8");
     return res.send(html);
   } catch(e) { return res.status(500).json({error:e.message}); }
@@ -364,7 +427,7 @@ const etiquetaCaja = async (req,res) => {
 <style>@page{size:100mm 65mm;margin:3mm}*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif}body{background:white}.card{border:2px solid #0d2260;border-radius:5px;padding:6px}.header{background:#0d2260;color:white;padding:4px 8px;border-radius:3px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center}.grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}.f{background:#f0f5ff;border-radius:3px;padding:3px 5px}.l{font-size:7px;font-weight:700;color:#3d5080;text-transform:uppercase}.v{font-size:12px;font-weight:800;color:#0d2260}.footer{margin-top:4px;font-size:7px;color:#64748b;text-align:center}@media print{.noprint{display:none}}</style></head><body>
 <button class="noprint" onclick="window.print()" style="margin-bottom:6px;padding:5px 10px;background:#0d2260;color:white;border:none;border-radius:3px;cursor:pointer">🖨️ Imprimir</button>
 <div class="card">
-<div class="header"><span style="font-size:9px;font-weight:700">TR3S AL MAR</span><span style="font-size:15px;font-weight:900">${ca.numero_caja}</span></div>
+<div class="header"><span style="font-size:9px;font-weight:700">TRES AL MAR</span><span style="font-size:15px;font-weight:900">${ca.numero_caja}</span></div>
 <div class="grid">
 <div class="f"><div class="l">Lote</div><div class="v">${ca.lote_codigo}</div></div>
 <div class="f"><div class="l">Carro</div><div class="v">${ca.codigo_carro||"Sin asignar"}</div></div>
@@ -403,7 +466,7 @@ const exportarCarrosExcel = async (req,res) => {
     const pca=[]; if(lote_id){pca.push(lote_id);qca+=` AND ca.lote_id=$${pca.length}`;}
     qca+=" ORDER BY c.codigo_carro ASC,ca.numero_caja ASC";
     const {rows:cajas}=await pool.query(qca,pca);
-    const wb=new ExcelJS.Workbook(); wb.creator="TR3S AL MAR";
+    const wb=new ExcelJS.Workbook(); wb.creator="TRES AL MAR";
     const ws1=wb.addWorksheet("Carros");
     ws1.addRow(["Carro","Lote","Estado","Niveles","Cajas","Kg Totales","Túnel"]).eachCell(c=>{
       c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0D2260"}};
@@ -455,10 +518,10 @@ ${htmlEtiqueta(ca, { cliente })}
 };
 
 // ── Constantes de empresa (actualizar RUT_EMPRESA con el real) ──
-const EMPRESA     = "TR3S AL MAR LTDA";
-const RUT_EMPRESA = "76.XXX.XXX-X"; // <- Reemplazar con RUT real
-const NRO_PLANTA  = "8476";
-const RESOLUCION  = "2105";
+const EMPRESA       = "TRES AL MAR LTDA";
+const RUT_EMPRESA   = "76.XXX.XXX-X"; // <- Reemplazar con RUT real
+const NRO_PLANTA    = "8537";
+const RES_SANITARIA = "2608188991";
 
 // ── Nombres de producto bilingüe ─────────────────────────────
 const PROD_ES = {
@@ -476,7 +539,7 @@ const PROD_EN = {
   "Tentaculo":   "FROZEN JUMBO FLYING SQUID TENTACLES",
   "Tentáculos":  "FROZEN JUMBO FLYING SQUID TENTACLES",
   "Reproductor": "FROZEN JUMBO FLYING SQUID MANTLE",
-  "Manto":       "FROZEN JUMBO FLYING SQUID MANTLE",
+  "Manto":       "FROZEN JUMBO FLYING SQUID MANTLE",  
   "Desecho":     "JUMBO FLYING SQUID WASTE",
 };
 
@@ -501,6 +564,7 @@ function htmlEtiqueta(ca, opts = {}) {
 
   return `
 <div class="etiqueta">
+  <div class="empresa">TRES AL MAR</div>
   <div class="bloque">
     <div class="titulo">${productoES}</div>
     <div class="subtitulo">CALIBRE ${calibreStr}</div>
@@ -509,7 +573,8 @@ function htmlEtiqueta(ca, opts = {}) {
     <div class="fila"><span class="lbl">Nombre científico:</span><span class="val"><i>Dosidicus gigas</i></span></div>
     <div class="fila"><span class="lbl">Peso Neto:</span><span class="val">${kg} Kg</span></div>
     <div class="fila"><span class="lbl">Planta elaboradora:</span><span class="val">${EMPRESA} &nbsp;·&nbsp; RUT: ${RUT_EMPRESA}</span></div>
-    <div class="fila"><span class="lbl">Nro planta / Res.:</span><span class="val">${NRO_PLANTA} &nbsp;·&nbsp; ${RESOLUCION}</span></div>
+    <div class="fila"><span class="lbl">Nro planta:</span><span class="val">${NRO_PLANTA}</span></div>
+    <div class="fila"><span class="lbl">Res. Sanitaria:</span><span class="val">${RES_SANITARIA}</span></div>
     <div class="fila"><span class="lbl">Fecha elaboración:</span><span class="val">${fmt2(fechaElab)}</span></div>
     <div class="fila"><span class="lbl">Fecha vencimiento:</span><span class="val">${fmt2(fechaVenc)}</span></div>
     <div class="fila"><span class="lbl">Lote:</span><span class="val">${ca.lote_codigo}</span></div>
@@ -526,7 +591,8 @@ function htmlEtiqueta(ca, opts = {}) {
     <div class="fila"><span class="lbl">Scientific name:</span><span class="val"><i>Dosidicus gigas</i></span></div>
     <div class="fila"><span class="lbl">Net weight:</span><span class="val">${kg} Kg</span></div>
     <div class="fila"><span class="lbl">Processing plant:</span><span class="val">${EMPRESA} &nbsp;·&nbsp; RUT: ${RUT_EMPRESA}</span></div>
-    <div class="fila"><span class="lbl">Plant N° / San.Res.:</span><span class="val">${NRO_PLANTA} &nbsp;·&nbsp; ${RESOLUCION}</span></div>
+    <div class="fila"><span class="lbl">Plant N°:</span><span class="val">${NRO_PLANTA}</span></div>
+    <div class="fila"><span class="lbl">San. Resolution:</span><span class="val">${RES_SANITARIA}</span></div>
     <div class="fila"><span class="lbl">Production date:</span><span class="val">${fmt2(fechaElab)}</span></div>
     <div class="fila"><span class="lbl">Expiry date:</span><span class="val">${fmt2(fechaVenc)}</span></div>
     <div class="fila"><span class="lbl">Lot:</span><span class="val">${ca.lote_codigo}</span></div>
@@ -541,23 +607,42 @@ function htmlEtiqueta(ca, opts = {}) {
 // ── CSS compartido para etiquetas ────────────────────────────
 const CSS_ETIQUETA = `
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
-  body{background:#fff;color:#000}
-  .etiqueta{width:100mm;height:100mm;padding:1.5mm;display:flex;flex-direction:column;page-break-after:always;page-break-inside:avoid;break-after:page;overflow:hidden}
+  /* ── Vista pantalla: fondo gris, etiquetas centradas ── */
+  body{background:#e8e8e8;color:#000;display:flex;flex-direction:column;align-items:center;padding:8mm;gap:6mm;min-height:100vh}
+  .etiqueta{width:100mm;height:100mm;padding:1.5mm;display:flex;flex-direction:column;page-break-after:always;page-break-inside:avoid;break-after:page;overflow:hidden;background:#fff;border:1px solid #999}
   .etiqueta:last-child{page-break-after:auto;break-after:auto}
-  .bloque{border:1px solid #000;padding:1.2mm 2mm;flex-shrink:0}
-  .titulo{font-size:8.5pt;font-weight:900;text-align:center;text-transform:uppercase;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .subtitulo{font-size:7.5pt;font-weight:700;text-align:center;text-transform:uppercase}
-  .sep{border-top:1px solid #000;margin:0.8mm 0;flex-shrink:0}
-  .fila{display:flex;gap:1.5mm;font-size:6.5pt;line-height:1.32}
-  .lbl{font-weight:700;min-width:27mm;flex-shrink:0}
-  .val{flex:1;overflow:hidden}
-  .num{font-size:8pt;font-weight:900;text-align:center;background:#000;color:#fff;padding:0.5mm 2mm;letter-spacing:1px;margin-top:0.8mm;flex-shrink:0}
-  .pais{font-size:10pt;font-weight:900;text-align:center;margin-top:0.3mm}
-  .noprint{padding:8px;background:#f0f5ff;border-bottom:1px solid #bfcffe}
+  .empresa{font-size:10pt;font-weight:900;text-align:center;text-transform:uppercase;letter-spacing:1px;border-bottom:1.5px solid #000;padding-bottom:0.6mm;margin-bottom:0.6mm;flex-shrink:0}
+  .bloque{border:1px solid #000;padding:1mm 2mm;flex-shrink:0}
+  .titulo{font-size:7.5pt;font-weight:900;text-align:center;text-transform:uppercase;line-height:1.2}
+  .subtitulo{font-size:6.5pt;font-weight:700;text-align:center;text-transform:uppercase}
+  .sep{border-top:1px solid #000;margin:0.6mm 0;flex-shrink:0}
+  .fila{display:flex;gap:1mm;font-size:6pt;line-height:1.28}
+  .lbl{font-weight:700;min-width:25mm;flex-shrink:0}
+  .val{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .num{font-size:8.5pt;font-weight:900;text-align:center;background:#000;color:#fff;padding:0.6mm 2mm;letter-spacing:1px;margin-top:auto;flex-shrink:0}
+  .pais{font-size:7.5pt;font-weight:900;text-align:center;margin-top:0.2mm}
+  .noprint{text-align:center;margin-bottom:6mm}
+  .nav-bar{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;padding:10px 16px;background:#f0f5ff;border:1px solid #bfcffe;border-radius:10px}
+  .nb{padding:7px 14px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;transition:opacity .1s}
+  .nb:disabled{opacity:.35;cursor:default}
+  .nb-dark{background:#0a1a4a;color:#fff}.nb-ghost{background:#fff;color:#0a1a4a;border:1px solid #bfcffe}
+  .nav-sep{width:1px;height:22px;background:#cbd5e1;flex-shrink:0}
+  .nav-cnt{font-size:14px;font-weight:800;color:#0a1a4a;min-width:58px;text-align:center}
+  .nav-info{font-size:11px;color:#64748b}
+  /* ── Impresión: sin tamaño fijo — el driver de la impresora manda ── */
   @media print{
-    @page{size:100mm 100mm;margin:0}
+    @page{margin:0}
+    html,body{height:100%;background:#fff;padding:0;margin:0}
+    body{display:block}
     .noprint{display:none}
-    .etiqueta{border:none}
+    .etiqueta{
+      width:100%;height:100%;
+      border:none;background:#fff;
+      page-break-after:always;page-break-inside:avoid;
+      break-after:page;
+      overflow:hidden;
+    }
+    .etiqueta:last-child{page-break-after:auto;break-after:auto}
   }
 `;
 
@@ -584,17 +669,40 @@ const etiquetasZebraCarro = async (req,res) => {
 <title>Etiquetas Carro ${rows[0].codigo_carro} — ${rows.length} cajas</title>
 <style>${CSS_ETIQUETA}</style></head><body>
 <div class="noprint">
-  <button onclick="window.print()" style="padding:8px 20px;background:#0a1a4a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;margin-right:12px">
-    Imprimir todas (${rows.length} etiquetas)
-  </button>
-  <span style="font-size:12px;color:#64748b">
-    Carro: <strong>${rows[0].codigo_carro}</strong> &nbsp;·&nbsp;
-    Lote: <strong>${rows[0].lote_codigo}</strong> &nbsp;·&nbsp;
-    ${rows.length} cajas &nbsp;·&nbsp; ${totalKg} kg totales
-    ${cliente ? `&nbsp;·&nbsp; Cliente: <strong>${cliente}</strong>` : ""}
-  </span>
+  <div class="nav-bar">
+    <button class="nb nb-dark" id="bAll">Imprimir todas (${rows.length})</button>
+    <div class="nav-sep"></div>
+    <button class="nb nb-ghost" id="bP" disabled>&#9664;</button>
+    <span class="nav-cnt" id="cnt">1 / ${rows.length}</span>
+    <button class="nb nb-ghost" id="bN" ${rows.length<=1?'disabled':''}>&#9654;</button>
+    <button class="nb nb-dark" id="bOne">Imprimir &eacute;sta</button>
+    <div class="nav-sep"></div>
+    <span class="nav-info">Carro: <strong>${rows[0].codigo_carro}</strong> &nbsp;&middot;&nbsp; Lote: <strong>${rows[0].lote_codigo}</strong> &nbsp;&middot;&nbsp; ${totalKg} kg${cliente ? ` &nbsp;&middot;&nbsp; ${cliente}` : ""}</span>
+    <div class="nav-sep"></div>
+    <span style="font-size:11px;color:#b45309;font-weight:700">&#9888; Para Zebra ZT411: usa el archivo ZPL en vez de imprimir este HTML</span>
+  </div>
 </div>
 ${rows.map(ca => htmlEtiqueta(ca, { cliente })).join("")}
+<script>
+(function(){
+  var ELS=Array.from(document.querySelectorAll('.etiqueta'));
+  var CUR=0,MODE='one';
+  function show(i){
+    CUR=Math.max(0,Math.min(ELS.length-1,i));
+    ELS.forEach(function(el,j){el.style.display=j===CUR?'flex':'none';});
+    document.getElementById('cnt').textContent=(CUR+1)+' / '+ELS.length;
+    document.getElementById('bP').disabled=CUR===0;
+    document.getElementById('bN').disabled=CUR===ELS.length-1;
+  }
+  window.addEventListener('beforeprint',function(){if(MODE==='all')ELS.forEach(function(el){el.style.display='flex';});});
+  window.addEventListener('afterprint',function(){setTimeout(function(){show(CUR);},50);});
+  document.getElementById('bP').onclick=function(){show(CUR-1);};
+  document.getElementById('bN').onclick=function(){show(CUR+1);};
+  document.getElementById('bOne').onclick=function(){MODE='one';window.print();};
+  document.getElementById('bAll').onclick=function(){MODE='all';window.print();};
+  show(0);
+})();
+</script>
 </body></html>`;
 
     res.setHeader("Content-Type","text/html; charset=utf-8");
@@ -626,19 +734,40 @@ const etiquetasZebraLote = async (req,res) => {
 <title>Etiquetas Lote ${lote_codigo} — ${rows.length} cajas</title>
 <style>${CSS_ETIQUETA}</style></head><body>
 <div class="noprint">
-  <button onclick="window.print()" style="padding:8px 20px;background:#0a1a4a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;margin-right:12px">
-    Imprimir todas (${rows.length} etiquetas)
-  </button>
-  <span style="font-size:12px;color:#64748b">
-    Lote: <strong>${lote_codigo}</strong> &nbsp;·&nbsp;
-    ${rows.length} cajas &nbsp;·&nbsp; ${totalKg} kg totales
-    ${cliente ? `&nbsp;·&nbsp; Cliente: <strong>${cliente}</strong>` : ""}
-  </span>
-  <div style="margin-top:6px;font-size:11px;color:#64748b">
-    Impresora Zebra ZT411 — tamaño de etiqueta: 100x100mm
+  <div class="nav-bar">
+    <button class="nb nb-dark" id="bAll">Imprimir todas (${rows.length})</button>
+    <div class="nav-sep"></div>
+    <button class="nb nb-ghost" id="bP" disabled>&#9664;</button>
+    <span class="nav-cnt" id="cnt">1 / ${rows.length}</span>
+    <button class="nb nb-ghost" id="bN" ${rows.length<=1?'disabled':''}>&#9654;</button>
+    <button class="nb nb-dark" id="bOne">Imprimir &eacute;sta</button>
+    <div class="nav-sep"></div>
+    <span class="nav-info">Lote: <strong>${lote_codigo}</strong> &nbsp;&middot;&nbsp; ${rows.length} cajas &nbsp;&middot;&nbsp; ${totalKg} kg${cliente ? ` &nbsp;&middot;&nbsp; ${cliente}` : ""}</span>
+    <div class="nav-sep"></div>
+    <span style="font-size:11px;color:#b45309;font-weight:700">&#9888; Para Zebra ZT411: usa el archivo ZPL en vez de imprimir este HTML</span>
   </div>
 </div>
 ${rows.map(ca => htmlEtiqueta(ca, { cliente })).join("")}
+<script>
+(function(){
+  var ELS=Array.from(document.querySelectorAll('.etiqueta'));
+  var CUR=0,MODE='one';
+  function show(i){
+    CUR=Math.max(0,Math.min(ELS.length-1,i));
+    ELS.forEach(function(el,j){el.style.display=j===CUR?'flex':'none';});
+    document.getElementById('cnt').textContent=(CUR+1)+' / '+ELS.length;
+    document.getElementById('bP').disabled=CUR===0;
+    document.getElementById('bN').disabled=CUR===ELS.length-1;
+  }
+  window.addEventListener('beforeprint',function(){if(MODE==='all')ELS.forEach(function(el){el.style.display='flex';});});
+  window.addEventListener('afterprint',function(){setTimeout(function(){show(CUR);},50);});
+  document.getElementById('bP').onclick=function(){show(CUR-1);};
+  document.getElementById('bN').onclick=function(){show(CUR+1);};
+  document.getElementById('bOne').onclick=function(){MODE='one';window.print();};
+  document.getElementById('bAll').onclick=function(){MODE='all';window.print();};
+  show(0);
+})();
+</script>
 </body></html>`;
 
     res.setHeader("Content-Type","text/html; charset=utf-8");
@@ -870,7 +999,7 @@ function generarZPL(ca, opts = {}) {
     ["Peso Neto:", `${kg} Kg`],
     ["Planta elaboradora:", safe(EMPRESA)],
     ["RUT:", `${safe(RUT_EMPRESA)}  Nro planta: ${NRO_PLANTA}`],
-    ["Res. sanitaria:", RESOLUCION],
+    ["Res. Sanitaria:", RES_SANITARIA],
     ["Fecha elaboracion:", fmt2(fechaElab)],
     ["Fecha vencimiento:", fmt2(fechaVenc)],
     ["Lote:", safe(ca.lote_codigo)],
@@ -883,7 +1012,7 @@ function generarZPL(ca, opts = {}) {
     ["Net weight:", `${kg} Kg`],
     ["Processing plant:", safe(EMPRESA)],
     ["RUT:", `${safe(RUT_EMPRESA)}  Plant N: ${NRO_PLANTA}`],
-    ["San. Res. N:", RESOLUCION],
+    ["San. Resolution:", RES_SANITARIA],
     ["Production date:", fmt2(fechaElab)],
     ["Expiry date:", fmt2(fechaVenc)],
     ["Lot:", safe(ca.lote_codigo)],
@@ -962,7 +1091,7 @@ const etiquetasZplLote = async (req, res) => {
 
 module.exports = {
   listar, carrosDeTunel, listarCarros, listarCajas, estadoCarros,
-  crearCarro, editarCarro, asignarCaja, marcarListo,
+  crearCarro, editarCarro, eliminarCarro, asignarCaja, marcarListo,
   ingresarCarroTunel, sacarCarroTunel,
   etiquetaCarro, etiquetaCaja, exportarCarrosExcel, etiquetaZebra,
   etiquetasZebraCarro, etiquetasZebraLote, etiquetasZplLote,

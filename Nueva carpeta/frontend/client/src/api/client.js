@@ -127,7 +127,8 @@ export const lotesAPI = {
   resumen:      (id)     => apiGet(`/lotes/${id}/resumen`),
   crear:        (d)      => apiPost("/lotes", d),
   actualizar:   (id, d)  => apiPut(`/lotes/${id}`, d),
-  cambiarEstado:(id, e)  => apiPut(`/lotes/${id}/estado`, { estado: e }),
+  cambiarEstado:(id, e, motivo_rechazo) => apiPut(`/lotes/${id}/estado`, { estado: e, motivo_rechazo: motivo_rechazo||null }),
+  rechazar:     (id, motivo) => apiPut(`/lotes/${id}/estado`, { estado: 'rechazado', motivo_rechazo: motivo }),
 };
 export const pesajesAPI = {
   listar:     (f = {})   => apiGet("/pesajes?" + new URLSearchParams(limpiar(f))),
@@ -158,6 +159,7 @@ export const tunelesAPI = {
   estadoCarros:        ()                   => apiGet("/tuneles/estado-carros"),
   crearCarro:          (d)                  => apiPost("/tuneles/carros", d),
   editarCarro:         (id, d)              => apiPut(`/tuneles/carros/${id}`, d),
+  eliminarCarro:       (id)                 => apiDelete(`/tuneles/carros/${id}`),
   marcarListo:         (id, temps = {})     => apiPut(`/tuneles/carros/${id}/listo`, temps),
   ingresarCarro:       (id, d)              => apiPut(`/tuneles/carros/${id}/ingresar`, d),
   sacarCarro:          (id, d)              => apiPut(`/tuneles/carros/${id}/salir`, d),

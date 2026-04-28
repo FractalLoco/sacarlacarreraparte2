@@ -122,13 +122,18 @@ const crear = async (req,res) => {
       folio_abastecimiento, folio_produccion,
       proveedor_id, conductor_id, patente_camion, patente_rampla, empresa_transporte,
       hora_llegada, hora_inicio_descarga, hora_fin_descarga,
-      temperatura_carga, estado_carga, observacion_recepcion, observacion
+      temperatura_carga, estado_carga, observacion_recepcion, observacion,
+      motivo_rechazo, estado_inicial
     } = req.body;
 
     if (!codigo || !kilos_brutos) return res.status(400).json({error:"codigo y kilos_brutos son requeridos"});
     if (parseFloat(kilos_brutos) < 0) return res.status(400).json({error:"kilos_brutos no puede ser negativo"});
-    const enProceso = await pool.query("SELECT id FROM lotes WHERE estado='en_proceso'");
-    if (enProceso.rows.length) return res.status(400).json({error:"Ya hay un lote en proceso. Ciérralo primero"});
+    // Si el lote va directo a en_proceso, verificar que no haya otro
+    const estadoCrear = estado_inicial || 'pendiente';
+    if (estadoCrear === 'en_proceso') {
+      const enProceso = await pool.query("SELECT id FROM lotes WHERE estado='en_proceso'");
+      if (enProceso.rows.length) return res.status(400).json({error:"Ya hay un lote en proceso. Ciérralo primero"});
+    }
     const dup = await pool.query("SELECT id FROM lotes WHERE codigo=$1",[codigo.toUpperCase().trim()]);
     if (dup.rows.length) return res.status(400).json({error:`Ya existe el lote ${codigo}`});
 
@@ -140,8 +145,8 @@ const crear = async (req,res) => {
          proveedor_id,conductor_id,patente_camion,patente_rampla,empresa_transporte,
          hora_llegada,hora_inicio_descarga,hora_fin_descarga,
          temperatura_carga,estado_carga,observacion_recepcion,observacion,
-         estado,creado_por,recibido_por
-       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'pendiente',$22,$22)
+         motivo_rechazo,estado,creado_por,recibido_por
+       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$24)
        RETURNING *`,
       [
         codigo.toUpperCase().trim(), fecha_ingreso||new Date(), kilos_brutos,
@@ -150,6 +155,7 @@ const crear = async (req,res) => {
         proveedor_id||null, conductor_id||null, patente_camion||null, patente_rampla||null, empresa_transporte||null,
         hora_llegada||null, hora_inicio_descarga||null, hora_fin_descarga||null,
         temperatura_carga||null, estado_carga||null, observacion_recepcion||null, observacion||null,
+        motivo_rechazo||null, estadoCrear,
         req.usuario.id
       ]
     );
@@ -165,7 +171,7 @@ const actualizar = async (req,res) => {
       folio_abastecimiento, folio_produccion,
       proveedor_id, conductor_id, patente_camion, patente_rampla, empresa_transporte,
       hora_llegada, hora_inicio_descarga, hora_fin_descarga,
-      temperatura_carga, estado_carga, observacion_recepcion, observacion
+      temperatura_carga, estado_carga, observacion_recepcion, observacion, motivo_rechazo
     } = req.body;
 
     if (kilos_brutos !== undefined && parseFloat(kilos_brutos) < 0)
@@ -179,8 +185,8 @@ const actualizar = async (req,res) => {
          proveedor_id=$10,conductor_id=$11,patente_camion=$12,patente_rampla=$13,empresa_transporte=$14,
          hora_llegada=$15,hora_inicio_descarga=$16,hora_fin_descarga=$17,
          temperatura_carga=$18,estado_carga=$19,observacion_recepcion=$20,observacion=$21,
-         updated_at=NOW()
-       WHERE id=$22 RETURNING *`,
+         motivo_rechazo=$22,updated_at=NOW()
+       WHERE id=$23 RETURNING *`,
       [
         codigo, fecha_ingreso, kilos_brutos,
         guia_despacho, proveedor_guia, factura_numero, proveedor_factura,
@@ -188,6 +194,7 @@ const actualizar = async (req,res) => {
         proveedor_id||null, conductor_id||null, patente_camion||null, patente_rampla||null, empresa_transporte||null,
         hora_llegada||null, hora_inicio_descarga||null, hora_fin_descarga||null,
         temperatura_carga||null, estado_carga||null, observacion_recepcion||null, observacion||null,
+        motivo_rechazo||null,
         req.params.id
       ]
     );
@@ -198,15 +205,20 @@ const actualizar = async (req,res) => {
 
 const cambiarEstado = async (req,res) => {
   try {
-    const {estado} = req.body;
-    if (!["pendiente","en_proceso","cerrado"].includes(estado))
+    const {estado, motivo_rechazo} = req.body;
+    if (!["pendiente","en_proceso","cerrado","rechazado"].includes(estado))
       return res.status(400).json({error:"Estado inválido"});
+    if (estado==="rechazado" && !motivo_rechazo)
+      return res.status(400).json({error:"Debe indicar el motivo de rechazo"});
     if (estado==="en_proceso") {
       const otro = await pool.query("SELECT id FROM lotes WHERE estado='en_proceso' AND id!=$1",[req.params.id]);
       if (otro.rows.length) return res.status(400).json({error:"Ya hay otro lote en proceso"});
     }
     const {rows} = await pool.query(
-      "UPDATE lotes SET estado=$1,updated_at=NOW() WHERE id=$2 RETURNING *",[estado,req.params.id]);
+      `UPDATE lotes SET estado=$1,
+        motivo_rechazo=CASE WHEN $1='rechazado' THEN $2 ELSE motivo_rechazo END,
+        updated_at=NOW() WHERE id=$3 RETURNING *`,
+      [estado, motivo_rechazo||null, req.params.id]);
     if (!rows.length) return res.status(404).json({error:"Lote no encontrado"});
     return res.json(rows[0]);
   } catch(e) { return res.status(500).json({error:"Error interno"}); }

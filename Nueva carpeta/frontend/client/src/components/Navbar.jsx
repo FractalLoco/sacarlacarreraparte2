@@ -12,11 +12,11 @@ const LOGO = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAkACQAAD/4QAiRXhpZgAATU0
 
 const NAV = [
   { id:"dashboard",    label:"Dashboard",          icon:BarChart3,    grupo:"PRINCIPAL" },
-  { id:"lotes",        label:"Lotes",               icon:Package,      grupo:"PRODUCCIÓN" },
-  { id:"recepcion",    label:"Recepción Camión",    icon:TruckIcon },
-  { id:"pesajes",      label:"Pesajes",             icon:Scale },
-  { id:"cargarcarros", label:"Cargar Carros",       icon:Truck },
-  { id:"tuneles",      label:"Carros y Túneles",    icon:Thermometer },
+  { id:"lotes",        label:"Lotes",               icon:Package,      grupo:"PRODUCCIÓN", num:1 },
+  { id:"recepcion",    label:"Recepción Camión",    icon:TruckIcon,    num:2 },
+  { id:"pesajes",      label:"Pesajes",             icon:Scale,        num:3 },
+  { id:"cargarcarros", label:"Cargar Carros",       icon:Truck,        num:4 },
+  { id:"tuneles",      label:"Administración de Cajas y Túneles",    icon:Thermometer, num:5 },
   { id:"inventario",   label:"Inventario",          icon:Boxes,        grupo:"BODEGA" },
   { id:"despachos",    label:"Despachos",           icon:Send },
   { id:"etiquetas",    label:"Imprimir Etiquetas",  icon:Printer },
@@ -82,7 +82,7 @@ export const Navbar = ({ vista, onNavegar }) => {
                   color:activo?"white":esRecepcion?"#fcd34d":"rgba(255,255,255,.48)",fontWeight:activo?700:esRecepcion?600:500,
                   borderLeft:activo?"3px solid #60a5fa":esRecepcion?"3px solid #fcd34d55":"3px solid transparent",
                 }}>
-                  <Icon size={17} style={{flexShrink:0}}/>{item.label}
+                  <Icon size={17} style={{flexShrink:0}}/>{item.num!=null&&<span style={{fontSize:10,fontWeight:700,minWidth:16,height:16,borderRadius:4,background:"rgba(255,255,255,.15)",color:"rgba(255,255,255,.7)",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:"0 4px",marginRight:2,flexShrink:0}}>{item.num}</span>}{item.label}
                   {esRecepcion&&<span style={{marginLeft:"auto",fontSize:9,background:"#fcd34d",color:"#713f12",borderRadius:10,padding:"1px 6px",fontWeight:700}}>ENTRADA</span>}
                 </button>
               </div>

@@ -88,7 +88,12 @@ const FormMonitoreoTemp = ({datos,onChange}) => {
           ))}
         </tbody>
       </table>
-      <p style={{fontSize:10,color:C.textMut,marginTop:6}}>Monitoreo cada 2 horas · Plan muestreo n=3; A=0; R=1</p>
+      <div style={{marginTop:10,padding:"8px 12px",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8,fontSize:12,color:"#0369a1",display:"flex",flexWrap:"wrap",gap:"6px 20px"}}>
+        <span><strong>n=3</strong> — tamaño de muestra</span>
+        <span><strong>A=0</strong> — aceptar si ninguna muestra falla</span>
+        <span><strong>R=1</strong> — rechazar si 1 o más muestras fallan</span>
+        <span style={{color:C.textMut}}>Monitoreo cada 2 horas</span>
+      </div>
     </div>
   );
 };
@@ -166,7 +171,13 @@ const FormCongelacion = ({datos,onChange}) => {
           ))}
         </tbody>
       </table>
-      <p style={{fontSize:10,color:C.textMut,marginTop:6}}>L.C: T° mínima -18°C · Permanencia máx 36h · Plan NCh44 Of 78 S1 (n=5; A=0; R=1)</p>
+      <div style={{marginTop:10,padding:"8px 12px",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8,fontSize:12,color:"#0369a1",display:"flex",flexWrap:"wrap",gap:"6px 20px"}}>
+        <span><strong>L.C.</strong> — Límite Crítico: T° mínima -18°C · Permanencia máx. 36 h</span>
+        <span><strong>n=5</strong> — tamaño de muestra</span>
+        <span><strong>A=0</strong> — aceptar si ninguna muestra falla</span>
+        <span><strong>R=1</strong> — rechazar si 1 o más muestras fallan</span>
+        <span style={{color:C.textMut}}>Plan NCh44 Of. 78 S1</span>
+      </div>
     </div>
   );
 };

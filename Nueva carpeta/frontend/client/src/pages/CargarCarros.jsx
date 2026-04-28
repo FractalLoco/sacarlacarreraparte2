@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Snowflake, History, Boxes, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Snowflake, History, Boxes, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { tunelesAPI, lotesAPI, cajasAPI } from "../api/client";
 import { C, iS } from "../constants/theme";
 
@@ -95,6 +95,19 @@ export default function CargarCarros({ onToast }) {
     setOcupado(false);
   };
 
+  /* ── eliminar carro ── */
+  const eliminarCarro = async (carro) => {
+    if (!window.confirm(`¿Eliminar el carro ${carro.codigo_carro}? Sus cajas quedarán sin asignar.`)) return;
+    setOcupado(true);
+    try {
+      await tunelesAPI.eliminarCarro(carro.id);
+      if (selCarro === carro.id) { setSelCarro(null); setSelLote(""); }
+      onToast(`Carro ${carro.codigo_carro} eliminado`, "success");
+      await recargar();
+    } catch(e) { onToast(e.message, "error"); }
+    setOcupado(false);
+  };
+
   /* ── congelar ── */
   const confirmarCongelar = async () => {
     const c = modalCongelar;
@@ -115,7 +128,7 @@ export default function CargarCarros({ onToast }) {
   const carroSel    = carros.find(c => c.id === selCarro);
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:12, paddingBottom:40 }}>
+    <div style={{ display:"flex", flexDirection:"column", gap:12, paddingBottom:40, maxWidth:1000, margin:"0 auto", width:"100%" }}>
 
       {/* HEADER */}
       <div style={{ background:"white", borderRadius:12, padding:"10px 14px",
@@ -239,6 +252,17 @@ export default function CargarCarros({ onToast }) {
                             color:"white", cursor:"pointer",
                             display:"flex", alignItems:"center", gap:3 }}>
                           <Snowflake size={10}/> Congelar
+                        </button>
+                      )}
+                      {!enTunel&&(
+                        <button
+                          onClick={e=>{ e.stopPropagation(); eliminarCarro(c); }}
+                          disabled={ocupado}
+                          style={{ fontSize:11, fontWeight:700, padding:"3px 7px",
+                            background:"#fee2e2", border:"1px solid #fca5a5",
+                            borderRadius:7, color:"#dc2626", cursor:"pointer",
+                            display:"flex", alignItems:"center", gap:3 }}>
+                          <Trash2 size={10}/>
                         </button>
                       )}
                     </div>

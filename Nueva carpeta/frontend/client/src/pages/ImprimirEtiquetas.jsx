@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Printer, PackageX, AlertCircle, Zap, Download } from "lucide-react";
-import { cajasAPI, lotesAPI, tunelesAPI, despachosAPI } from "../api/client";
+import { cajasAPI, lotesAPI, tunelesAPI, despachosAPI, pesajesAPI } from "../api/client";
 import { C, iS } from "../constants/theme";
 
 export default function ImprimirEtiquetas({ onToast }) {
@@ -14,6 +14,10 @@ export default function ImprimirEtiquetas({ onToast }) {
   const [clientes, setClientes] = useState([]);
   const [abriendo, setAbriendo] = useState(false);
   const [descargando, setDescargando] = useState(false);
+  const [tipos,      setTipos]       = useState([]);
+  const [calibres,   setCalibres]    = useState([]);
+  const [tipoId,     setTipoId]      = useState("");
+  const [calibreId,  setCalibreId]   = useState("");
 
   // Para impresión directa de lote existente
   const [loteExistente, setLoteExistente] = useState(null);
@@ -21,6 +25,8 @@ export default function ImprimirEtiquetas({ onToast }) {
 
   useEffect(() => {
     despachosAPI.clientes().then(setClientes).catch(() => {});
+    pesajesAPI.tipos().then(t=>setTipos(t.filter(x=>!x.es_desecho))).catch(() => {});
+    pesajesAPI.calibres().then(setCalibres).catch(() => {});
   }, []);
 
   const cargarLotes = async () => {
@@ -34,16 +40,19 @@ export default function ImprimirEtiquetas({ onToast }) {
   };
 
   const generarCajas = async () => {
-    if (!lote_id || !cantidad || cantidad < 1)
-      return onToast("Completa los datos", "error");
+    if (!lote_id)       return onToast("Selecciona un lote", "error");
+    if (!tipoId)        return onToast("Selecciona el tipo de producto", "error");
+    if (!cantidad || cantidad < 1) return onToast("Ingresa la cantidad de cajas", "error");
     setCargando(true);
     try {
       const res = await cajasAPI.generarLote(lote_id, {
         cantidad_cajas: parseInt(cantidad),
+        producto_tipo_id: parseInt(tipoId),
+        calibre_id: calibreId ? parseInt(calibreId) : null,
       });
       setCajas(res.cajas);
       setGenerado(true);
-      onToast(`${res.cantidad_cajas} etiquetas generadas`, "success");
+      onToast(`${res.cajas.length} etiquetas generadas`);
     } catch (e) {
       onToast(e.message, "error");
     }
@@ -79,7 +88,7 @@ export default function ImprimirEtiquetas({ onToast }) {
   const loteSeleccionado = lotes.find((l) => l.id === parseInt(lote_id));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "0 0 40px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "0 0 40px", maxWidth: 560, margin: "0 auto", width: "100%" }}>
       {/* Header */}
       <div style={{ background: "white", borderRadius: 12, padding: 16, border: `1px solid ${C.border}` }}>
         <h1 style={{ fontSize: 18, fontWeight: 800, color: C.blue900, marginBottom: 4 }}>
@@ -224,7 +233,39 @@ export default function ImprimirEtiquetas({ onToast }) {
 
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.blue700, marginBottom: 8 }}>
-              2. CANTIDAD DE CAJAS *
+              2. TIPO DE PRODUCTO *
+            </label>
+            <select
+              value={tipoId}
+              onChange={e=>{ setTipoId(e.target.value); setCalibreId(""); }}
+              style={{ ...iS, width: "100%" }}
+            >
+              <option value="">— Seleccionar tipo —</option>
+              {tipos.map(t=>(
+                <option key={t.id} value={t.id}>{t.nombre}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.blue700, marginBottom: 8 }}>
+              3. CALIBRE <span style={{fontWeight:400,color:C.textMut}}>(opcional)</span>
+            </label>
+            <select
+              value={calibreId}
+              onChange={e=>setCalibreId(e.target.value)}
+              style={{ ...iS, width: "100%" }}
+            >
+              <option value="">— Sin calibre específico —</option>
+              {calibres.map(c=>(
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.blue700, marginBottom: 8 }}>
+              4. CANTIDAD DE CAJAS *
             </label>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
@@ -246,17 +287,17 @@ export default function ImprimirEtiquetas({ onToast }) {
 
           <button
             onClick={generarCajas}
-            disabled={!lote_id || cargando}
+            disabled={!lote_id || !tipoId || cargando}
             style={{
               width: "100%",
               padding: 12,
-              background: !lote_id ? C.textMut : `linear-gradient(135deg, ${C.blue900}, ${C.blue600})`,
+              background: (!lote_id || !tipoId) ? C.textMut : `linear-gradient(135deg, ${C.blue900}, ${C.blue600})`,
               border: "none",
               borderRadius: 10,
               color: "white",
               fontWeight: 800,
               fontSize: 14,
-              cursor: !lote_id ? "default" : "pointer",
+              cursor: (!lote_id || !tipoId) ? "default" : "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -344,7 +385,7 @@ export default function ImprimirEtiquetas({ onToast }) {
             </div>
 
             <button
-              onClick={() => { setGenerado(false); setCajas([]); setCliente(""); }}
+              onClick={() => { setGenerado(false); setCajas([]); setCliente(""); setTipoId(""); setCalibreId(""); }}
               style={{
                 width: "100%",
                 padding: 10,

@@ -22,6 +22,7 @@ router.put("/carros/:id/listo",        autenticar, audit("carro_listo"),        
 router.put("/carros/:id/ingresar",     autenticar, audit("ingresar_carro_tunel"),    c.ingresarCarroTunel);
 router.put("/carros/:id/salir",        autenticar, audit("salir_carro_tunel"),       c.sacarCarroTunel);
 router.put("/carros/:id",             autenticar, audit("editar_carro"),            c.editarCarro);
+router.delete("/carros/:id",          autenticar, audit("eliminar_carro"),          c.eliminarCarro);
 router.post("/carros/:carro_id/asignar-cajas", autenticar, audit("asignar_cajas"), c.asignarCajasAlCarro);
 router.post("/carros/:carro_id/congelar",      autenticar, audit("congelar_carro"), c.congelarCarro);
 router.get("/cajas/:id/etiqueta-zebra",         autenticar, c.etiquetaZebra);

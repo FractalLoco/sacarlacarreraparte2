@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Edit, ChevronRight, FileText, Download, Package, CheckCircle, Clock,
-         Truck, Building2, Thermometer, AlertCircle, Image, File, Eye, Paperclip } from "lucide-react";
+         Truck, Building2, Thermometer, AlertCircle, Image, File, Eye, Paperclip,
+         XCircle, AlertOctagon, Calendar, Filter } from "lucide-react";
 import { lotesAPI, tunelesAPI, reportesAPI, proveedoresAPI, conductoresAPI, recepcionAPI } from "../api/client";
 import { C, iS, fmt, fmtFecha } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
@@ -10,6 +11,7 @@ const ESTADOS = {
   pendiente:  {label:"Pendiente",  bg:"#f1f5f9",text:"#64748b"},
   en_proceso: {label:"En Proceso", bg:"#dcfce7",text:"#15803d"},
   cerrado:    {label:"Cerrado",    bg:"#dbeafe",text:"#1d4ed8"},
+  rechazado:  {label:"Rechazado",  bg:"#fef2f2",text:"#dc2626"},
 };
 
 const ESTADOS_CARGA = ["Fresco","Con hielo","Congelado","Descongelado","Otro"];
@@ -77,7 +79,9 @@ export default function Lotes({ onToast, onVerPesajes }) {
   const [modal,       setModal]       = useState(null);
   const [esNuevo,     setEsNuevo]     = useState(true);
   const [form,        setForm]        = useState({});
-  const [filtros,     setFiltros]     = useState({estado:"",codigo:""});
+  const [filtros,     setFiltros]     = useState({estado:"",codigo:"",fecha_desde:"",fecha_hasta:""});
+  const [modalRechazo, setModalRechazo] = useState(null); // lote object
+  const [motivoRechazo, setMotivoRechazo] = useState("");
   const [archivosPanel, setArchivosPanel] = useState(null); // lote_id expandido
   const [archivosLote,  setArchivosLote]  = useState([]);
   const [loadingArch,   setLoadingArch]   = useState(false);
@@ -158,6 +162,15 @@ export default function Lotes({ onToast, onVerPesajes }) {
     } catch(e){ onToast(e.message,"error"); }
   };
 
+  const rechazarLote = async () => {
+    if (!motivoRechazo.trim()) return onToast("Ingresa el motivo de rechazo","error");
+    try {
+      await lotesAPI.rechazar(modalRechazo.id, motivoRechazo.trim());
+      onToast("Lote rechazado");
+      setModalRechazo(null); setMotivoRechazo(""); cargar();
+    } catch(e){ onToast(e.message,"error"); }
+  };
+
   const cambiarEstado = async (lote,estado) => {
     try {
       await lotesAPI.cambiarEstado(lote.id,estado);
@@ -170,13 +183,29 @@ export default function Lotes({ onToast, onVerPesajes }) {
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {/* Filtros */}
       <div style={{background:"white",borderRadius:14,border:`1px solid ${C.border}`,padding:"12px 16px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-        <input value={filtros.codigo} onChange={e=>setFiltros(p=>({...p,codigo:e.target.value}))} placeholder="Buscar lote..." style={{...iS,flex:1,minWidth:160}}/>
+        <input value={filtros.codigo} onChange={e=>setFiltros(p=>({...p,codigo:e.target.value}))} placeholder="Buscar lote..." style={{...iS,flex:1,minWidth:140}}/>
         <select value={filtros.estado} onChange={e=>setFiltros(p=>({...p,estado:e.target.value}))} style={{...iS,width:"auto",cursor:"pointer"}}>
           <option value="">Todos los estados</option>
           <option value="pendiente">Pendiente</option>
           <option value="en_proceso">En Proceso</option>
           <option value="cerrado">Cerrado</option>
+          <option value="rechazado">⛔ Rechazado</option>
         </select>
+        <div style={{display:"flex",alignItems:"center",gap:5}}>
+          <Calendar size={14} color={C.textMut}/>
+          <input type="date" value={filtros.fecha_desde} onChange={e=>setFiltros(p=>({...p,fecha_desde:e.target.value}))}
+            title="Desde" style={{...iS,width:140,fontSize:12}} placeholder="Desde"/>
+          <span style={{color:C.textMut,fontSize:12}}>—</span>
+          <input type="date" value={filtros.fecha_hasta} onChange={e=>setFiltros(p=>({...p,fecha_hasta:e.target.value}))}
+            title="Hasta" style={{...iS,width:140,fontSize:12}} placeholder="Hasta"/>
+          {(filtros.fecha_desde||filtros.fecha_hasta)&&(
+            <button onClick={()=>setFiltros(p=>({...p,fecha_desde:"",fecha_hasta:""}))}
+              title="Limpiar fechas"
+              style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",padding:"2px",display:"flex",alignItems:"center"}}>
+              <XCircle size={14}/>
+            </button>
+          )}
+        </div>
         {esJefe&&<button onClick={abrirNuevo} style={{display:"flex",alignItems:"center",gap:6,padding:"10px 16px",background:C.blue900,border:"none",borderRadius:10,color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
           <Plus size={14}/> Nuevo Lote
         </button>}
@@ -215,6 +244,16 @@ export default function Lotes({ onToast, onVerPesajes }) {
               </div>
             </div>
 
+            {/* Motivo de rechazo */}
+            {l.estado==="rechazado"&&l.motivo_rechazo&&(
+              <div style={{background:"#fef2f2",borderRadius:10,padding:"10px 14px",border:"1.5px solid #fca5a5",marginBottom:8,display:"flex",gap:8,alignItems:"flex-start"}}>
+                <AlertOctagon size={14} color="#dc2626" style={{flexShrink:0,marginTop:1}}/>
+                <div>
+                  <p style={{fontSize:10,fontWeight:700,color:"#dc2626",textTransform:"uppercase",marginBottom:2}}>Motivo de Rechazo</p>
+                  <p style={{fontSize:12,color:"#7f1d1d"}}>{l.motivo_rechazo}</p>
+                </div>
+              </div>
+            )}
             {/* Info proveedor/conductor */}
             <div style={{display:"flex",gap:14,flexWrap:"wrap",padding:"8px 0",borderTop:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,marginBottom:10}}>
               {l.proveedor_nombre&&(
@@ -255,9 +294,15 @@ export default function Lotes({ onToast, onVerPesajes }) {
             <button onClick={()=>onVerPesajes(l)} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",background:C.blue50,border:`1px solid ${C.blue200}`,borderRadius:9,color:C.blue700,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                 <ChevronRight size={12}/> Ver Pesajes
               </button>
-              {esJefe&&l.estado!=="cerrado"&&<button onClick={()=>abrirEditar(l)} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",background:C.blue50,border:`1px solid ${C.blue200}`,borderRadius:9,color:C.blue700,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><Edit size={11}/> Editar</button>}
+              {esJefe&&l.estado!=="cerrado"&&l.estado!=="rechazado"&&<button onClick={()=>abrirEditar(l)} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",background:C.blue50,border:`1px solid ${C.blue200}`,borderRadius:9,color:C.blue700,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><Edit size={11}/> Editar</button>}
               {esJefe&&l.estado==="pendiente"  &&<button onClick={()=>cambiarEstado(l,"en_proceso")} style={{padding:"7px 12px",background:"#dcfce7",border:"1px solid #a7f3d0",borderRadius:9,color:"#15803d",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}><CheckCircle size={11}/>Iniciar</button>}
               {esJefe&&l.estado==="en_proceso" &&<button onClick={()=>cambiarEstado(l,"cerrado")}    style={{padding:"7px 12px",background:"#dbeafe",border:"1px solid #93c5fd",borderRadius:9,color:"#1d4ed8",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}><Clock size={11}/>Cerrar</button>}
+              {esJefe&&(l.estado==="pendiente"||l.estado==="en_proceso")&&(
+                <button onClick={()=>{setModalRechazo(l);setMotivoRechazo("");}}
+                  style={{padding:"7px 12px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:9,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+                  <XCircle size={11}/>Rechazar
+                </button>
+              )}
               {l.estado==="cerrado"&&<>
                 <button onClick={async()=>{try{onToast("Generando PDF...","info");await reportesAPI.pdf(l.id);onToast("PDF descargado");}catch(e){onToast(e.message,"error");}}} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:9,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}><FileText size={11}/> PDF</button>
                 <button onClick={async()=>{try{onToast("Generando Excel...","info");await reportesAPI.excel(l.id);onToast("Excel descargado");}catch(e){onToast(e.message,"error");}}} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:9,color:"#15803d",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}><Download size={11}/> Excel</button>
@@ -319,6 +364,54 @@ export default function Lotes({ onToast, onVerPesajes }) {
           onGuardar={guardar} esNuevo={esNuevo}
           proveedores={proveedores} conductores={conductores}
         />
+      )}
+
+      {/* Modal rechazo de lote */}
+      {modalRechazo&&(
+        <div onClick={e=>{if(e.target===e.currentTarget){setModalRechazo(null);setMotivoRechazo("");}}}
+          style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",
+            background:"rgba(10,26,74,.72)",backdropFilter:"blur(4px)"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:"white",borderRadius:16,width:"100%",maxWidth:460,padding:0,
+              boxShadow:"0 20px 60px rgba(0,0,0,.3)",overflow:"hidden",animation:"popIn .22s cubic-bezier(.34,1.56,.64,1)"}}>
+            <div style={{padding:"16px 20px",background:"linear-gradient(135deg,#dc2626,#b91c1c)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <AlertOctagon size={16} color="white"/>
+                <div>
+                  <p style={{color:"white",fontWeight:800,fontSize:14}}>Rechazar Lote</p>
+                  <p style={{color:"rgba(255,255,255,.7)",fontSize:11}}>{modalRechazo.codigo} · {modalRechazo.estado}</p>
+                </div>
+              </div>
+              <button onClick={()=>{setModalRechazo(null);setMotivoRechazo("");}} style={{background:"none",border:"none",color:"white",fontSize:20,cursor:"pointer",padding:0}}>✕</button>
+            </div>
+            <div style={{padding:20,display:"flex",flexDirection:"column",gap:14}}>
+              <div style={{background:"#fef2f2",borderRadius:10,padding:12,border:"1px solid #fca5a5"}}>
+                <p style={{fontSize:12,color:"#dc2626",fontWeight:600}}>⚠ Se registrará el lote como RECHAZADO. Queda en el sistema con su motivo.</p>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:.5,marginBottom:5}}>
+                  Motivo de Rechazo *
+                </label>
+                <textarea rows={4} value={motivoRechazo} onChange={e=>setMotivoRechazo(e.target.value)}
+                  placeholder="Describe el motivo (ej: temperatura fuera de rango, documentación incompleta, producto en mal estado...)"
+                  style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"1.5px solid #fca5a5",fontSize:13,
+                    resize:"none",fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"#fff5f5"}}/>
+              </div>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>{setModalRechazo(null);setMotivoRechazo("");}}
+                  style={{flex:1,padding:"10px",background:"white",border:"1px solid #e2e8f0",borderRadius:8,color:"#64748b",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                  Cancelar
+                </button>
+                <button onClick={rechazarLote} disabled={!motivoRechazo.trim()}
+                  style={{flex:2,padding:"10px",background:motivoRechazo.trim()?"#dc2626":"#e2e8f0",border:"none",borderRadius:8,
+                    color:"white",fontWeight:700,cursor:motivoRechazo.trim()?"pointer":"not-allowed",fontFamily:"inherit",
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  <XCircle size={13}/> Confirmar Rechazo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
